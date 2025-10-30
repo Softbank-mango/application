@@ -1,0 +1,69 @@
+name: Deploy to Amazon ECS (Blue/Green)
+
+on:
+  push:
+    branches:
+      - main # main 브랜치에 푸시될 때마다 실행
+
+env:
+  AWS_REGION: ap-northeast-2 # 서울 리전
+  ECR_REPOSITORY: sample-app # 1단계에서 만든 ECR 리포지토리
+  ECS_SERVICE: YOUR_ECS_SERVICE_NAME # 2단계에서 만든 ECS 서비스 이름
+  ECS_CLUSTER: hackathon-cluster # 2단계에서 만든 ECS 클러스터 이름
+  ECS_TASK_DEFINITION: YOUR_TASK_DEFINITION_FILE_PATH # (아래에서 만들 파일 경로) e.g., sample-app/task-definition.json
+  CONTAINER_NAME: sample-app # 태스크 정의 내부의 컨테이너 이름
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }} # Git 커밋 SHA를 이미지 태그로 사용
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./sample-app
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    # (중요!) CodeDeploy가 참조할 새 태스크 정의 JSON 파일을 만듭니다.
+    - name: Download task definition
+      id: task-def
+      run: |
+        aws ecs describe-task-definition --task-definition YOUR_TASK_DEFINITION_FAMILY_NAME \
+          --query '{ family: taskDefinition.family, containerDefinitions: taskDefinition.containerDefinitions, volumes: taskDefinition.volumes, placementConstraints: taskDefinition.placementConstraints, requiresCompatibilities: taskDefinition.requiresCompatibilities, networkMode: taskDefinition.networkMode, cpu: taskDefinition.cpu, memory: taskDefinition.memory, executionRoleArn: taskDefinition.executionRoleArn, taskRoleArn: taskDefinition.taskRoleArn }' \
+          > task-definition.json
+        echo "::set-output name=task_def_path::task-definition.json"
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: render-task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task_def_path }}
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-service@v1
+      with:
+        task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true # 배포가 끝날 때까지 기다립니다. (중요!)
