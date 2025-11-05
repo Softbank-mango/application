@@ -1,0 +1,21 @@
+# Node modules 제외 (이미 Docker 내부에서 npm install 실행)
+node_modules
+npm-debug.log
+
+# Git 및 IDE 파일
+.git
+.gitignore
+.vscode
+.idea
+
+# Flutter 관련 캐시
+frontend/.dart_tool
+frontend/build/linux
+frontend/build/macos
+frontend/build/windows
+frontend/build/ios
+frontend/build/android
+
+# 기타 임시 파일
+*.log
+.DS_Store
