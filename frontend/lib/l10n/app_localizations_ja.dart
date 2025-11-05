@@ -157,4 +157,16 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get darkMode => 'ダークモード';
+
+  @override
+  String get plantStatusSleeping => '冬眠中';
+
+  @override
+  String get wakeUpTitle => 'アプリは冬眠中です 💤';
+
+  @override
+  String get wakeUpMessage => '72時間トラフィックがなかったため、コスト削減のために「冬眠」モードに移行しました。';
+
+  @override
+  String get wakeUpButton => 'アプリを起こす (Wake Up)';
 }

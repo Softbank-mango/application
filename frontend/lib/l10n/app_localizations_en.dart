@@ -159,4 +159,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get darkMode => 'Dark Mode';
+
+  @override
+  String get plantStatusSleeping => 'Sleeping';
+
+  @override
+  String get wakeUpTitle => 'This App is Sleeping 💤';
+
+  @override
+  String get wakeUpMessage =>
+      'This app was moved to \'Hibernation\' mode to save costs due to 72 hours of inactivity.';
+
+  @override
+  String get wakeUpButton => 'Wake Up App';
 }

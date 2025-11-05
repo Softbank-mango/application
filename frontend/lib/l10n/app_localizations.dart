@@ -399,6 +399,30 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'다크 모드'**
   String get darkMode;
+
+  /// No description provided for @plantStatusSleeping.
+  ///
+  /// In ko, this message translates to:
+  /// **'겨울잠'**
+  String get plantStatusSleeping;
+
+  /// No description provided for @wakeUpTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'앱이 \'겨울잠\' 상태입니다 💤'**
+  String get wakeUpTitle;
+
+  /// No description provided for @wakeUpMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'앱이 72시간 동안 트래픽이 없어 비용 절약을 위해 \'겨울잠\' 모드로 전환되었습니다.'**
+  String get wakeUpMessage;
+
+  /// No description provided for @wakeUpButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'앱 깨우기 (Wake Up)'**
+  String get wakeUpButton;
 }
 
 class _AppLocalizationsDelegate

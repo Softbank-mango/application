@@ -49,5 +49,9 @@
   "retry": "ハエを捕まえる (Retry)",
   "settingsLanguage": "言語設定",
   "theme": "テーマ",
-  "darkMode": "ダークモード"
+  "darkMode": "ダークモード",
+  "plantStatusSleeping": "冬眠中",
+  "wakeUpTitle": "アプリは冬眠中です 💤",
+  "wakeUpMessage": "72時間トラフィックがなかったため、コスト削減のために「冬眠」モードに移行しました。",
+  "wakeUpButton": "アプリを起こす (Wake Up)"
 }

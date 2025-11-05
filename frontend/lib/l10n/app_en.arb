@@ -49,5 +49,9 @@
   "retry": "Catch Fly (Retry)",
   "settingsLanguage": "Language Settings",
   "theme": "Theme",
-  "darkMode": "Dark Mode"
+  "darkMode": "Dark Mode",
+  "plantStatusSleeping": "Sleeping",
+  "wakeUpTitle": "This App is Sleeping 💤",
+  "wakeUpMessage": "This app was moved to 'Hibernation' mode to save costs due to 72 hours of inactivity.",
+  "wakeUpButton": "Wake Up App"
 }
