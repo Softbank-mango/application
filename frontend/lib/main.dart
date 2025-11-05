@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:flutter_localizations/flutter_localizations.dart';
 import '../l10n/app_localizations.dart';
@@ -15,6 +17,8 @@ import 'pages/workspace_selection.dart';
 import 'pages/app_list.dart';
 import 'pages/deployment.dart';
 import 'pages/loading.dart';
+
+late IO.Socket socket;
 
 void main() => runApp(MyApp());
 
@@ -79,8 +83,22 @@ class _AppCoreState extends State<AppCore> {
   }
 
   void connectToSocket() {
-    socket = IO.io('ws://localhost:4000', <String, dynamic>{
-      'transports': ['websocket'], 'autoConnect': true
+    String hostUrl;
+
+    if (kIsWeb) {
+      // 웹 환경
+      // 로컬 개발 시: http://localhost:8080
+      // 배포 시: Cloud Run origin 자동 사용
+      hostUrl = kDebugMode ? 'http://localhost:8080' : '';
+    } else {
+      // 모바일 환경
+      // Cloud Run 주소 + 포트 8080 (Cloud Run은 실제로 8080 포트로 컨테이너 실행됨)
+      hostUrl = 'https://deplight-82312839239.asia-northeast3.run.app';
+    }
+
+    socket = IO.io(hostUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': true,
     });
 
     // 1. "장식장" 데이터 수신
