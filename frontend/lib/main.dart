@@ -1,29 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:lottie/lottie.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:fl_chart/fl_chart.dart'; // 차트 임포트
-import 'package:intl/intl.dart'; // 날짜 포맷 임포트
+import 'package:fl_chart/fl_chart.dart';
+import 'dart:math';
+
+// (신규) l10n 및 글로벌 상태 임포트
+import 'package:flutter_localizations/flutter_localizations.dart';
+import '../l10n/app_localizations.dart';
+import 'app_state.dart';
+import 'theme/app_theme.dart';
+
+// 분리된 파일들 임포트
+import 'models/plant_model.dart';
+import 'models/logEntry_model.dart';
+import 'pages/workspace_selection.dart';
+import 'pages/app_list.dart';
+import 'pages/deployment.dart';
+import 'pages/loading.dart';
 
 void main() => runApp(MyApp());
 
-class MyApp extends StatefulWidget {
+// --- (1) 앱의 껍데기 (신규 "Toss" 테마) ---
+class MyApp extends StatelessWidget {
+  // (신규) 글로벌 상태 인스턴스
+  final AppState _appState = AppState.instance;
+
   @override
-  _MyAppState createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    // (신규) ValueListenableBuilder로 앱의 테마와 로케일을 실시간 변경
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: _appState.themeMode,
+      builder: (context, themeMode, child) {
+        return ValueListenableBuilder<Locale>(
+          valueListenable: _appState.locale,
+          builder: (context, locale, child) {
+            return MaterialApp(
+              debugShowCheckedModeBanner: false,
+              title: 'Deplight',
+
+              // (신규) l10n 설정
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+
+              // (신규) 글로벌 상태에서 로케일 적용
+              locale: locale,
+
+              // (신규) AppTheme에서 라이트/다크 모드 테마 적용
+              theme: AppTheme.lightTheme,
+              darkTheme: AppTheme.darkTheme,
+              themeMode: themeMode, // (신규) 글로벌 상태에서 테마 모드 적용
+
+              home: AppCore(),
+            );
+          },
+        );
+      },
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> {
+// --- (2) 앱의 핵심 로직 (상태 관리 및 네비게이션) ---
+// (이 파일의 나머지 코드는 이전 버전과 100% 동일합니다)
+class AppCore extends StatefulWidget {
+  @override
+  _AppCoreState createState() => _AppCoreState();
+}
+// ... (이하 _AppCoreState 클래스 코드는 변경 없음) ...
+class _AppCoreState extends State<AppCore> {
+// ... (이전 코드와 동일) ...
   late IO.Socket socket;
-  String deployStatus = '서버 연결 중...';
-  String deployStep = '';
+  List<Plant> shelf = [];
+// ... (이전 코드와 동일) ...
   final player = AudioPlayer();
-
-  // 터미널 로그/콘솔
-  List<LogEntry> logs = [];
-  final ScrollController _logScrollController = ScrollController();
-  final TextEditingController _consoleController = TextEditingController(); // <-- 콘솔 입력용
-
-  // 매트릭
+  List<LogEntry> globalLogs = [];
+// ... (이전 코드와 동일) ...
   Map<String, double> currentMetrics = {'cpu': 0.0, 'mem': 0.0};
   List<FlSpot> cpuData = [FlSpot(0, 5)];
   List<FlSpot> memData = [FlSpot(0, 128)];
@@ -32,430 +82,236 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+// ... (이전 코드와 동일) ...
     connectToSocket();
   }
 
   @override
   void dispose() {
     socket.dispose();
+// ... (이전 코드와 동일) ...
     player.dispose();
-    _logScrollController.dispose();
-    _consoleController.dispose(); // <-- 컨트롤러 해제
     super.dispose();
   }
 
   void connectToSocket() {
     socket = IO.io('ws://localhost:4000', <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': true,
+// ... (이전 코드와 동일) ...
+      'transports': ['websocket'], 'autoConnect': true
     });
 
-    socket.onConnect((_) {
-      print('Socket.io: connect');
+    socket.on('current-shelf', (data) {
+      if (!mounted) return;
       setState(() {
-        logs.add(LogEntry(time: DateTime.now(), message: 'Deploy-Pal 서버에 연결되었습니다.', status: 'SYSTEM'));
+// ... (이전 코드와 동일) ...
+        shelf = (data as List).map((p) => Plant(
+            id: p['id'], plant: p['plant'], version: p['version'],
+            description: p['description'] ?? 'No description provided.',
+            status: p['status'], owner: p['owner'], reactions: List<String>.from(p['reactions'])
+        )..currentStatusMessage = (p['status'] == 'HEALTHY' ? '배포 완료됨' : (p['status'] == 'FAILED' ? '배포 실패함' : '대기 중'))
+        ).toList();
       });
     });
 
-    socket.on('status', (data) {
+    socket.on('new-plant', (data) {
+// ... (이전 코드와 동일) ...
+      if (!mounted) return;
+
+      final newPlant = Plant(
+          id: data['id'], plant: data['plant'], version: data['version'],
+// ... (이전 코드와 동일) ...
+          description: data['description'] ?? 'New deployment...',
+          status: data['status'], owner: data['owner'], reactions: []
+      );
+
       setState(() {
-        deployStatus = data['message'];
-        deployStep = data['status'] ?? '';
+        shelf.add(newPlant);
       });
-      if (deployStep == 'done') {
-        player.play(AssetSource('success.mp3'));
-      }
+
+      Navigator.push(
+// ... (이전 코드와 동일) ...
+        context,
+        MaterialPageRoute(
+          builder: (context) => DeploymentPage(
+            plant: newPlant,
+// ... (이전 코드와 동일) ...
+            socket: socket,
+            initialMetrics: currentMetrics,
+            initialCpuData: cpuData,
+            initialMemData: memData,
+            globalLogs: globalLogs,
+          ),
+        ),
+      );
+      Navigator.of(context).popUntil((route) => route.isFirst);
     });
 
-    socket.on('all-logs', (data) { /* (향후 확장용) */ });
-
-    // "새 로그" 수신 (배포 로그 및 콘솔 응답)
     socket.on('new-log', (data) {
+// ... (이전 코드와 동일) ...
+      if (!mounted) return;
       setState(() {
-        logs.add(LogEntry(
-            time: DateTime.parse(data['time']),
-            message: data['message'],
-            status: data['status']
-        ));
-
-        // 로그 자동 스크롤
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_logScrollController.hasClients) {
-            _logScrollController.animateTo(
-              _logScrollController.position.maxScrollExtent,
-              duration: Duration(milliseconds: 100),
-              curve: Curves.easeOut,
-            );
-          }
-        });
+        final log = LogEntry(
+            time: DateTime.parse(data['log']['time']),
+// ... (이전 코드와 동일) ...
+            message: data['log']['message'],
+            status: data['log']['status']
+        );
+        if (data['id'] == 0) {
+// ... (이전 코드와 동일) ...
+          globalLogs.add(log);
+          if (globalLogs.length > 100) globalLogs.removeAt(0);
+        } else {
+          try {
+// ... (이전 코드와 동일) ...
+            final plant = shelf.firstWhere((p) => p.id == data['id']);
+            plant.logs.add(log);
+            if (log.status == 'AI_INSIGHT') plant.aiInsight = log.message;
+          } catch (e) { print('Log for unknown plant: ${data['id']}'); }
+        }
       });
     });
 
-    // "매트릭" 수신 (이전과 동일)
-    socket.on('metrics-update', (data) {
+    socket.on('status-update', (data) {
+// ... (이전 코드와 동일) ...
+      if (!mounted) return;
       setState(() {
-        double cpu = data['cpu'].toDouble();
-        double mem = data['mem'].toDouble();
+        try {
+          final plant = shelf.firstWhere((p) => p.id == data['id']);
+// ... (이전 코드와 동일) ...
+          plant.status = data['status'];
+          plant.currentStatusMessage = data['message'];
+        } catch (e) { print('Status for unknown plant: ${data['id']}'); }
+      });
+    });
+
+    socket.on('plant-complete', (data) {
+// ... (이전 코드와 동일) ...
+      if (!mounted) return;
+      setState(() {
+        try {
+          final plant = shelf.firstWhere((p) => p.id == data['id']);
+// ... (이전 코드와 동일) ...
+          plant.status = data['status'];
+          plant.plant = data['plant'];
+          plant.version = data['version'];
+        } catch (e) { print('Complete for unknown plant: ${data['id']}'); }
+      });
+      player.play(AssetSource('success.mp3'));
+    });
+
+    socket.on('reaction-update', (data) {
+// ... (이전 코드와 동일) ...
+      if (!mounted) return;
+      setState(() {
+        try {
+          final plant = shelf.firstWhere((p) => p.id == data['id']);
+// ... (이전 코드와 동일) ...
+          plant.reactions = List<String>.from(data['reactions']);
+          plant.isSparkling = true;
+          Future.delayed(Duration(seconds: 2), () {
+// ... (이전 코드와 동일) ...
+            if (mounted) {
+              setState(() => plant.isSparkling = false);
+            }
+          });
+        } catch (e) { print('Reaction for unknown plant: ${data['id']}'); }
+      });
+    });
+
+    socket.on('metrics-update', (data) {
+// ... (이전 코드와 동일) ...
+      if (!mounted) return;
+      setState(() {
+        double cpu = data['cpu'].toDouble(); double mem = data['mem'].toDouble();
+// ... (이전 코드와 동일) ...
         currentMetrics = {'cpu': cpu, 'mem': mem};
-        cpuData.add(FlSpot(_timeCounter, cpu));
-        memData.add(FlSpot(_timeCounter, mem));
-        if (cpuData.length > 20) cpuData.removeAt(0);
-        if (memData.length > 20) memData.removeAt(0);
+        cpuData.add(FlSpot(_timeCounter, cpu)); memData.add(FlSpot(_timeCounter, mem));
+        if (cpuData.length > 20) cpuData.removeAt(0); if (memData.length > 20) memData.removeAt(0);
+// ... (이전 코드와 동일) ...
         _timeCounter += 1.0;
       });
     });
-
-    socket.onDisconnect((_) => print('Socket.io: disconnect'));
   }
 
-  // --- (1) 메인 상단: 나무 애니메이션 ---
-  Widget _buildAnimation() {
-    // (이전과 동일)
-    String lottieFile;
-    switch (deployStep) {
-      case 'linting': lottieFile = 'assets/seed.json'; break;
-      case 'testing': lottieFile = 'assets/sprout.json'; break;
-      case 'building': case 'deploying': case 'routing':
-      lottieFile = 'assets/growing.json'; break;
-      case 'done': lottieFile = 'assets/done_tree.json'; break;
-      case 'failed': lottieFile = 'assets/wilted.json'; break;
-      default: lottieFile = 'assets/pot.json';
-    }
-    return Lottie.asset(lottieFile, width: 250, height: 250);
-  }
+  void _startNewDeployment(BuildContext context) {
+// ... (이전 코드와 동일) ...
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+    final l10n = AppLocalizations.of(context)!; // (신규)
 
-  // --- (2) 메인 상단: 배포 버튼 ---
-  Widget _buildDeployButton() {
-    // (이전과 동일)
-    bool isDeploying = deployStep.isNotEmpty && deployStep != 'waiting' && deployStep != 'done' && deployStep != 'failed';
-    if (isDeploying) return Container(height: 50);
-
-    bool isFailed = deployStep == 'failed';
-    String buttonText = isFailed ? '다시 시도 (Retry)' : '배포 시작 (Deploy)';
-    IconData buttonIcon = isFailed ? Icons.refresh : Icons.rocket_launch;
-
-    return ElevatedButton.icon(
-      icon: Icon(buttonIcon, color: Colors.white),
-      label: Text(buttonText, style: TextStyle(color: Colors.white)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isFailed ? Colors.redAccent[700] : Colors.blueAccent[700],
-        padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-        textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.deployNewApp), // (수정)
+        content: Column(
+// ... (이전 코드와 동일) ...
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameController, decoration: InputDecoration(labelText: 'App Name (v1.5)')),
+// ... (이전 코드와 동일) ...
+            TextField(controller: descController, decoration: InputDecoration(labelText: 'Description')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)), // (수정)
+          TextButton(
+              onPressed: () {
+// ... (이전 코드와 동일) ...
+                final newName = nameController.text.isNotEmpty ? nameController.text : 'New App';
+                final newDesc = descController.text.isNotEmpty ? descController.text : 'New deployment...';
+                Navigator.pop(ctx);
+                socket.emit('start-deploy', { 'version': newName, 'description': newDesc });
+                Navigator.push(context, MaterialPageRoute(builder: (context) => DeploymentLoadingPage()));
+              },
+              child: Text(l10n.deployNewApp)), // (수정)
+        ],
       ),
-      onPressed: () {
-        setState(() {
-          logs = []; cpuData = [FlSpot(0, 5)]; memData = [FlSpot(0, 128)]; _timeCounter = 1.0;
-        });
-        if (isFailed) socket.emit('start-fail');
-        else socket.emit('start-deploy');
+    );
+  }
+
+  void _sendSlackReaction(int id, String emoji) {
+// ... (이전 코드와 동일) ...
+    socket.emit('slack-reaction', {'id': id, 'emoji': emoji});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+// ... (이전 코드와 동일) ...
+    return WorkspaceSelectionPage(
+      onWorkspaceSelected: (workspaceId, workspaceName) {
+        Navigator.push(
+// ... (이전 코드와 동일) ...
+          context,
+          MaterialPageRoute(
+            builder: (context) => ShelfPage(
+              workspaceId: workspaceId,
+// ... (이전 코드와 동일) ...
+              workspaceName: workspaceName,
+              shelf: shelf,
+              onDeploy: () => _startNewDeployment(context),
+              onPlantTap: (plant) {
+// ... (이전 코드와 동일) ...
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => DeploymentPage(
+// ... (이전 코드와 동일) ...
+                      plant: plant,
+                      socket: socket,
+                      initialMetrics: currentMetrics,
+// ... (이전 코드와 동일) ...
+                      initialCpuData: cpuData,
+                      initialMemData: memData,
+                      globalLogs: globalLogs,
+                    ),
+                  ),
+                );
+              },
+              onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
+            ),
+          ),
+        );
       },
     );
   }
-
-  // --- (3) 하단 탭 1: "가짜 콘솔" (Logs 탭 업그레이드) ---
-  Widget _buildConsoleArea() {
-    return Container(
-      color: Color(0xFF1E1E1E), // 터미널 배경색
-      child: Column(
-        children: [
-          // "실제 로그 영역" (Expanded로 남은 공간 채우기)
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-              child: ListView.builder(
-                controller: _logScrollController,
-                itemCount: logs.length,
-                itemBuilder: (context, index) {
-                  final log = logs[index];
-                  Color logColor;
-                  String prefix = '[${log.status}]';
-                  String message = log.message;
-
-                  // 상태에 따라 색상 및 접두사 변경
-                  switch(log.status) {
-                    case 'COMMAND': // 사용자가 입력한 명령어
-                      logColor = Colors.white;
-                      prefix = '\$'; // 프롬프트
-                      message = ' ${log.message}';
-                      break;
-                    case 'CONSOLE': // 콘솔의 'stdout'
-                      logColor = Colors.grey[300]!;
-                      prefix = ''; // 응답에는 접두사 없음
-                      break;
-                    case 'CONSOLE_ERROR':
-                      logColor = Colors.red[300]!;
-                      prefix = '';
-                      break;
-                    case 'FAILED':
-                      logColor = Colors.red[300]!;
-                      prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:';
-                      break;
-                    case 'DONE':
-                      logColor = Colors.cyan[300]!;
-                      prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:';
-                      break;
-                    case 'SYSTEM':
-                      logColor = Colors.grey[400]!;
-                      prefix = '[SYSTEM]';
-                      break;
-                    default: // LINTING, TESTING, BUILDING...
-                      logColor = Colors.green[300]!;
-                      prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:';
-                  }
-
-                  return Text(
-                    '$prefix $message',
-                    style: TextStyle(
-                      color: logColor,
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          // "콘솔 입력 필드"
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            color: Colors.grey[900], // 입력창 배경
-            child: Row(
-              children: [
-                Text(
-                  '>', // 프롬프트
-                  style: TextStyle(color: Colors.green[300], fontFamily: 'monospace', fontSize: 14),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _consoleController,
-                    style: TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'kubectl get pods (가짜 명령어 입력...)',
-                      hintStyle: TextStyle(color: Colors.grey[600], fontFamily: 'monospace'),
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                    onSubmitted: (command) {
-                      if (command.isEmpty) return;
-
-                      // "clear" 명령어는 클라이언트에서 처리
-                      if (command.toLowerCase() == 'clear') {
-                        setState(() {
-                          logs = []; // 로그 리스트 비우기
-                        });
-                      } else {
-                        // 그 외 명령어는 서버로 전송
-                        socket.emit('run-command', command);
-                      }
-
-                      _consoleController.clear(); // 입력창 비우기
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-  // --- (4) 하단 탭 2: 매트릭 차트 ---
-  Widget _buildMetricsArea() {
-    // (이전과 동일)
-    return Container(
-      color: Color(0xFF1E1E1E),
-      padding: EdgeInsets.all(16.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('실시간 리소스 (Prometheus)', style: TextStyle(color: Colors.white, fontSize: 16)),
-            SizedBox(height: 10),
-            Text('CPU Usage (%)', style: TextStyle(color: Colors.cyan[300])),
-            SizedBox(height: 10),
-            Container(height: 150, child: _buildLineChart(cpuData, Colors.cyan)),
-            SizedBox(height: 20),
-            Text('Memory Usage (MB)', style: TextStyle(color: Colors.green[300])),
-            SizedBox(height: 10),
-            Container(height: 150, child: _buildLineChart(memData, Colors.green)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 차트 UI 헬퍼
-  LineChart _buildLineChart(List<FlSpot> data, Color color) {
-    // (이전과 동일)
-    return LineChart(
-      LineChartData(
-        gridData: FlGridData(show: true, drawVerticalLine: true, getDrawingHorizontalLine: (v) => FlLine(color: Colors.grey[850]!, strokeWidth: 0.5)),
-        titlesData: FlTitlesData(show: false),
-        borderData: FlBorderData(show: true, border: Border.all(color: Colors.grey[800]!)),
-        lineBarsData: [
-          LineChartBarData(
-            spots: data,
-            isCurved: true,
-            color: color,
-            barWidth: 3,
-            isStrokeCapRound: true,
-            dotData: FlDotData(show: false),
-            belowBarData: BarAreaData(show: true, color: color.withOpacity(0.3)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- (5) 하단 탭 3: 현재 상태 ---
-  Widget _buildStatusArea() {
-    // (이전과 동일)
-    String statusText;
-    Color statusColor;
-    bool isDeploying = deployStep.isNotEmpty && deployStep != 'waiting' && deployStep != 'done' && deployStep != 'failed';
-
-    if (isDeploying) {
-      statusText = 'Deploying';
-      statusColor = Colors.yellow[600]!;
-    } else if (deployStep == 'failed') {
-      statusText = 'Failed';
-      statusColor = Colors.red[400]!;
-    } else {
-      statusText = 'Healthy'; // done 또는 waiting
-      statusColor = Colors.green[400]!;
-    }
-
-    return Container(
-      color: Color(0xFF1E1E1E),
-      padding: EdgeInsets.all(20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('현재 상태 (Current Status)', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          SizedBox(height: 20),
-          Row(
-            children: [
-              Icon(Icons.circle, color: statusColor, size: 14),
-              SizedBox(width: 8),
-              Text(statusText, style: TextStyle(fontSize: 16, color: statusColor, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          SizedBox(height: 20),
-          Divider(color: Colors.grey[800]),
-          SizedBox(height: 20),
-          Text('실시간 리소스 사용량', style: TextStyle(fontSize: 16, color: Colors.white70)),
-          SizedBox(height: 16),
-          Text(
-              'CPU: ${currentMetrics['cpu']!.toStringAsFixed(1)} %',
-              style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: Colors.cyan[300])
-          ),
-          SizedBox(height: 8),
-          Text(
-              'MEM: ${currentMetrics['mem']!.toStringAsFixed(1)} MB',
-              style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: Colors.green[300])
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- (6) 메인 UI 빌드 ---
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Deplight',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Color(0xFF121212),
-      ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: Text('🌳 Deplight (Friendly PaaS)'),
-          backgroundColor: Color(0xFF1E1E1E),
-          elevation: 0,
-        ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // "메인 상단" (Toss 감성)
-            Expanded(
-              flex: 3, // 상단 60%
-              child: Center(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        _buildAnimation(),
-                        SizedBox(height: 24),
-                        Text(
-                          deployStatus,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: Colors.white, fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        SizedBox(height: 30),
-                        _buildDeployButton(),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // "메인 하단" (Vercel 신뢰성) - 3개 탭 뷰
-            Expanded(
-              flex: 2, // 하단 40%
-              child: DefaultTabController(
-                length: 3, // 탭 3개
-                child: Column(
-                  children: [
-                    // 탭바
-                    Container(
-                      color: Color(0xFF1E1E1E),
-                      child: TabBar(
-                        indicatorColor: Colors.blueAccent,
-                        tabs: [
-                          Tab(icon: Icon(Icons.terminal), text: 'Console'), // <-- "Logs" -> "Console"
-                          Tab(icon: Icon(Icons.bar_chart), text: 'Metrics'),
-                          Tab(icon: Icon(Icons.monitor_heart), text: 'Status'),
-                        ],
-                      ),
-                    ),
-                    // 탭 뷰 (남은 공간 모두 차지)
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          _buildConsoleArea(),  // <-- "Logs" 탭을 "Console" 위젯으로 교체
-                          _buildMetricsArea(),
-                          _buildStatusArea(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
-
-// --- 데이터 모델 클래스 ---
-class LogEntry {
-  final DateTime time;
-  final String message;
-  final String status;
-  LogEntry({required this.time, required this.message, required this.status});
-}
-
