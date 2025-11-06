@@ -27,9 +27,8 @@ class AppCore extends StatefulWidget {
 }
 
 class _AppCoreState extends State<AppCore> {
-  // 'late' 대신 Nullable 'IO.Socket?'로 변경
   IO.Socket? socket;
-  // List<Plant> shelf = [];
+  List<Plant> shelf = []; // (참고: 이 변수는 AppCore가 아닌 ShelfPage로 이동했습니다)
   final player = AudioPlayer();
 
   List<LogEntry> globalLogs = [];
@@ -39,27 +38,44 @@ class _AppCoreState extends State<AppCore> {
   double _timeCounter = 1.0;
 
   User? _currentUser;
-  Map<String, dynamic>? _userData; // (Firestore의 'users' 문서 데이터)
-  bool _isLoadingUser = true; // (로딩 상태)
+  Map<String, dynamic>? _userData;
+
+  List<dynamic> _workspaces = [];
+  bool _isLoadingWorkspaces = true;
+
+  // 로딩 상태를 하나로 통합
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    // 비동기 초기화 함수 호출
-    _initializeSocket();
-    _loadUserData();
+    _initializeAll();
   }
 
-  Future<void> _loadUserData() async {
-    // 1. Auth에서 현재 사용자 가져오기
+// 통합 초기화 함수
+  Future<void> _initializeAll() async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      print("오류: AppCore에 진입했으나 사용자가 null입니다.");
-      FirebaseAuth.instance.signOut(); // 강제 로그아웃
+      print("오류: AppCore 진입했으나 사용자 null. 강제 로그아웃.");
+      FirebaseAuth.instance.signOut();
       return;
     }
 
-    // 2. Firestore에서 'users' 컬렉션의 추가 정보(role 등) 가져오기
+    String? token;
+    try {
+      token = await user.getIdToken();
+    } catch (e) {
+      print("토큰 가져오기 실패: $e. 강제 로그아웃.");
+      FirebaseAuth.instance.signOut();
+      return;
+    }
+
+    if (token == null) {
+      print("토큰이 null입니다. 강제 로그아웃.");
+      FirebaseAuth.instance.signOut();
+      return;
+    }
+
     DocumentSnapshot<Map<String, dynamic>>? userDataDoc;
     try {
       final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
@@ -68,34 +84,30 @@ class _AppCoreState extends State<AppCore> {
       print("Firestore 사용자 정보 로드 실패: $e");
     }
 
-    // 3. 상태 변수에 저장하고 UI 갱신 (로딩 완료)
+    // (중요) 토큰을 가져온 후에 소켓 연결
+    await connectToSocket(token);
+
+    // (신규) 소켓 연결 후 워크스페이스 목록 바로 요청
+    socket?.emit('get-my-workspaces');
+
     if (mounted) {
       setState(() {
         _currentUser = user;
         _userData = userDataDoc?.data();
-        _isLoadingUser = false;
+        _isLoading = false; // (로딩 완료)
       });
     }
   }
 
-  // 소켓 비동기 초기화 함수
-  Future<void> _initializeSocket() async {
-    await connectToSocket();
-    if (mounted) {
-      setState(() {
-        // 소켓 초기화 완료
-      });
-    }
-  }
 
   // 모든 리스너를 socket.off로 제거
   @override
   void dispose() {
     socket?.off('new-plant', _onNewPlant);
-    socket?.off('plant-update', _onPlantUpdate);
+    // socket?.off('plant-update', _onPlantUpdate);
     socket?.off('new-log', _onNewLog);
-    socket?.off('status-update', _onStatusUpdate);
-    socket?.off('reaction-update', _onReactionUpdate);
+    // socket?.off('status-update', _onStatusUpdate);
+    // socket?.off('reaction-update', _onReactionUpdate);
     socket?.off('metrics-update', _onMetricsUpdate);
     socket?.off('workspaces-list', _onWorkspacesList);
     socket?.off('get-my-workspaces', _onGetMyWorkspaces);
@@ -105,23 +117,12 @@ class _AppCoreState extends State<AppCore> {
     super.dispose();
   }
 
-  Future<void> connectToSocket() async {
-    String? token;
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      token = await user.getIdToken();
-    }
-    if (token == null) {
-      print("로그인 사용자 없음. 소켓 연결 안함.");
-      return;
-    }
-
+  Future<void> connectToSocket(String token) async {
     String hostUrl;
     if (kIsWeb) {
       final uri = Uri.base.origin;
       hostUrl = kDebugMode ? 'http://localhost:8080' : uri.toString();
     } else {
-      // deplight-softbank 프로젝트 URL이 맞는지 확인 필요 (TODO)
       hostUrl = 'https://deplight-softbank.asia-northeast3.run.app';
     }
 
@@ -129,18 +130,16 @@ class _AppCoreState extends State<AppCore> {
       'transports': ['websocket'],
       'autoConnect': true,
       'auth': {
-        'token': token
+        'token': token // (전달받은 토큰 사용)
       }
     });
 
     socket?.on('new-plant', _onNewPlant);
-    socket?.on('plant-update', _onPlantUpdate);
+    // socket?.on('plant-update', _onPlantUpdate); // (삭제)
     socket?.on('new-log', _onNewLog);
-    socket?.on('status-update', _onStatusUpdate);
-    socket?.on('reaction-update', _onReactionUpdate);
+    // socket?.on('status-update', _onStatusUpdate); // (삭제)
+    // socket?.on('reaction-update', _onReactionUpdate); // (삭제)
     socket?.on('metrics-update', _onMetricsUpdate);
-
-    // 워크스페이스 관련 리스너 (WorkspaceSelectionPage로 이동 예정)
     socket?.on('workspaces-list', _onWorkspacesList);
     socket?.on('get-my-workspaces', _onGetMyWorkspaces);
   }
@@ -217,18 +216,10 @@ class _AppCoreState extends State<AppCore> {
           message: data['log']['message'],
           status: data['log']['status']
       );
+      // AppCore는 'global' 로그(id: 0)만 처리
       if (data['id'] == 0) {
         globalLogs.add(log);
         if (globalLogs.length > 100) globalLogs.removeAt(0);
-      } else {
-        // (참고: shelf 변수가 없으므로 이 로직은 이제 ShelfPage 또는 DeploymentPage에서 처리되어야 함)
-        /*
-        try {
-          final plant = shelf.firstWhere((p) => p.id == data['id']);
-          plant.logs.add(log);
-          if (log.status == 'AI_INSIGHT') plant.aiInsight = log.message;
-        } catch (e) { print('Log for unknown plant: ${data['id']}'); }
-        */
       }
     });
   }
@@ -278,11 +269,22 @@ class _AppCoreState extends State<AppCore> {
   }
 
   void _onWorkspacesList(dynamic data) {
-    // (이 콜백은 WorkspaceSelectionPage가 직접 처리)
+    if (!mounted) return;
+    setState(() {
+      _workspaces = data as List;
+      _isLoadingWorkspaces = false;
+    });
   }
 
   void _onGetMyWorkspaces(dynamic data) {
-    // (이 콜백은 WorkspaceSelectionPage가 직접 처리)
+    if (!mounted) return;
+    setState(() { _isLoadingWorkspaces = true; });
+    socket?.emit('get-my-workspaces');
+  }
+
+  void _createNewWorkspace(String name) {
+    if (socket == null || name.isEmpty) return;
+    socket!.emit('create-workspace', {'name': name});
   }
 
   void _startNewDeployment(BuildContext context, String workspaceId) {
@@ -355,7 +357,7 @@ class _AppCoreState extends State<AppCore> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingUser || socket == null) {
+    if (_isLoading || _isLoadingWorkspaces || socket == null) {
       return Scaffold(
         body: Center(
           child: Column(
@@ -363,7 +365,7 @@ class _AppCoreState extends State<AppCore> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text(_isLoadingUser ? "사용자 정보 로드 중..." : "백엔드 서버와 연결 중..."),
+              Text("서버와 연결 중..."), // (로딩 텍스트 통일)
             ],
           ),
         ),
@@ -374,8 +376,11 @@ class _AppCoreState extends State<AppCore> {
       socket: socket!,
       currentUser: _currentUser!,
       userData: _userData,
-      onWorkspaceSelected: (workspaceId, workspaceName) {
+      workspaces: _workspaces,
+      onCreateWorkspace: (name) => _createNewWorkspace(name),
 
+
+      onWorkspaceSelected: (workspaceId, workspaceName) {
         socket!.emit('join-workspace', workspaceId);
 
         Navigator.push(
@@ -387,7 +392,8 @@ class _AppCoreState extends State<AppCore> {
               workspaceId: workspaceId,
               workspaceName: workspaceName,
               socket: socket!, // socket 전달
-              // shelf: shelf,
+              workspaces: _workspaces,
+              onCreateWorkspace: (name) => _createNewWorkspace(name),
               onDeploy: () => _startNewDeployment(context, workspaceId),
               onPlantTap: (plant) {
                 if (plant.status == 'SLEEPING') {
