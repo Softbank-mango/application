@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../pages/settings.dart';
 import '../l10n/app_localizations.dart';
 import '../app_state.dart'; // (신규) 글로벌 상태 임포트
 
 // --- (9) 프로필 메뉴 버튼 위젯 ---
 class ProfileMenuButton extends StatelessWidget {
-  const ProfileMenuButton({Key? key}) : super(key: key);
+  final User currentUser;
+  final Map<String, dynamic>? userData;
+
+  const ProfileMenuButton({
+    Key? key,
+    required this.currentUser, // (★★★★★)
+    this.userData,             // (★★★★★)
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -18,13 +26,19 @@ class ProfileMenuButton extends StatelessWidget {
       onSelected: (value) {
         if (value == 'settings') {
           Navigator.push(context, MaterialPageRoute(
-              builder: (context) => SettingsPage(),
+              builder: (context) => SettingsPage(
+                currentUser: currentUser,
+                userData: userData,
+              ),
               settings: RouteSettings(name: '/settings')
           ));
+        } else if (value == 'logout') {
+          // (★★★★★ 신규 ★★★★★: 로그아웃 로직 추가)
+          FirebaseAuth.instance.signOut();
         } else if (value == 'mypage') {
           // ... (이전과 동일)
         } else if (value == 'logout') {
-          // ... (이전과 동일)
+          FirebaseAuth.instance.signOut();
         }
         // (신규) 다크 모드 스위치 자체는 onSelected를 호출하지 않음
       },
@@ -35,8 +49,15 @@ class ProfileMenuButton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.profileTitle, style: TextStyle(fontWeight: FontWeight.bold, color: theme.textTheme.bodyMedium?.color)),
-                Text(l10n.profileEmail, style: TextStyle(color: theme.hintColor, fontSize: 12)),
+                Text(
+                    currentUser.displayName ?? l10n.profileTitle,
+                    style: TextStyle(fontWeight: FontWeight.bold, color: theme.textTheme.bodyMedium?.color)
+                ),
+                // 실제 이메일 표시
+                Text(
+                    currentUser.email ?? 'No Email',
+                    style: TextStyle(color: theme.hintColor, fontSize: 12)
+                ),
               ],
             )
         ),
@@ -104,7 +125,10 @@ class ProfileMenuButton extends StatelessWidget {
         backgroundColor: theme.dividerColor.withOpacity(0.5),
         foregroundColor: theme.colorScheme.primary,
         radius: 16,
-        child: Icon(Icons.person, size: 20),
+        child: Text(
+          currentUser.email?[0].toUpperCase() ?? 'U', // 이메일 첫 글자
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
