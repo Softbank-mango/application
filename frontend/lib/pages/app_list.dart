@@ -4,25 +4,73 @@ import '../models/plant_model.dart';
 import '../widgets/profile_menu.dart';
 import 'dart:math';
 import '../l10n/app_localizations.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
-// --- (4) "장식장" 페이지 (Toss 리스트 스타일) ---
-class ShelfPage extends StatelessWidget {
+class ShelfPage extends StatefulWidget {
   final String workspaceId;
   final String workspaceName;
-  final List<Plant> shelf; // (신규) AppCore로부터 실시간 shelf 리스트를 받음
   final VoidCallback onDeploy;
   final Function(Plant) onPlantTap;
-  final Function(int, String) onSlackReaction;
+  final Function(String, String) onSlackReaction;
+  final User currentUser;
+  final Map<String, dynamic>? userData;
+  final IO.Socket socket; // (★★★★★ 신규 ★★★★★: socket 받기)
 
-  const ShelfPage(
-      {Key? key,
-        required this.workspaceId,
-        required this.workspaceName,
-        required this.shelf,
-        required this.onDeploy,
-        required this.onPlantTap,
-        required this.onSlackReaction})
-      : super(key: key);
+  const ShelfPage({
+    Key? key,
+    required this.workspaceId,
+    required this.workspaceName,
+    required this.onDeploy,
+    required this.onPlantTap,
+    required this.onSlackReaction,
+    required this.currentUser,
+    this.userData,
+    required this.socket, // (★★★★★ 신규 ★★★★★)
+    // (★★★★★ 삭제 ★★★★★: required this.shelf 제거)
+  }) : super(key: key);
+
+  @override
+  _ShelfPageState createState() => _ShelfPageState();
+}
+
+class _ShelfPageState extends State<ShelfPage> {
+  List<Plant> shelf = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // AppCore에서 가져온 리스너
+    // ShelfPage가 로드될 때 'current-shelf' 리스너 등록
+    widget.socket.on('current-shelf', _onCurrentShelf);
+  }
+
+  @override
+  void dispose() {
+    // 리스너 해제
+    widget.socket.off('current-shelf', _onCurrentShelf);
+    super.dispose();
+  }
+
+  // AppCore에서 가져온 리스너 콜백
+  void _onCurrentShelf(dynamic data) {
+    if (!mounted) return;
+    setState(() {
+      shelf = (data as List).map((p) => Plant(
+          id: p['id'],
+          plantType: p['plantType'] ?? 'pot',
+          version: p['version'],
+          description: p['description'] ?? 'No description provided.',
+          status: p['status'],
+          ownerUid: p['ownerUid'] ?? '',
+          workspaceId: p['workspaceId'] ?? '',
+          reactions: List<String>.from(p['reactions'] ?? [])
+      )..currentStatusMessage = (p['status'] == 'HEALTHY' ? '배포 완료됨' : (p['status'] == 'FAILED' ? '배포 실패함' : (p['status'] == 'SLEEPING' ? '겨울잠 상태' : '대기 중')))
+      ).toList();
+      _isLoading = false; // (로딩 완료)
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,8 +80,13 @@ class ShelfPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(workspaceName),
-        actions: [ProfileMenuButton()],
+        title: Text(widget.workspaceName),
+        actions: [
+          ProfileMenuButton(
+            currentUser: widget.currentUser,
+            userData: widget.userData,
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -48,19 +101,21 @@ class ShelfPage extends StatelessWidget {
                 )),
             SizedBox(height: 20),
             Expanded(
-              child: currentShelf.isEmpty
+              child: shelf.isEmpty
                   ? Center(child: Text('앱이 없습니다. "새 앱 배포하기"를 눌러 시작하세요.'))
                   : ListView.builder(
-                itemCount: currentShelf.length,
+                itemCount: shelf.length,
                 itemBuilder: (context, index) {
-                  final plant = currentShelf[index];
+                  final plant = shelf[index];
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6.0),
                     child: TossProjectListTile(
                       plant: plant,
-                      onTap: () => onPlantTap(plant),
+                      onTap: () => widget.onPlantTap(plant),
                       onSlackReaction: (emoji) =>
-                          onSlackReaction(plant.id, emoji),
+                          widget.onSlackReaction(plant.id, emoji),
+                      currentUser: widget.currentUser,
+                      userData: widget.userData,
                     ),
                   );
                 },
@@ -70,7 +125,7 @@ class ShelfPage extends StatelessWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: onDeploy,
+        onPressed: widget.onDeploy,
         label: Text(l10n.deployNewApp),
         icon: Icon(Icons.add),
         backgroundColor: theme.colorScheme.primary,
@@ -87,11 +142,16 @@ class TossProjectListTile extends StatelessWidget {
   final VoidCallback onTap;
   final Function(String) onSlackReaction;
 
+  final User currentUser;
+  final Map<String, dynamic>? userData;
+
   const TossProjectListTile({
     Key? key,
     required this.plant,
     required this.onTap,
     required this.onSlackReaction,
+    required this.currentUser,
+    this.userData,
   }) : super(key: key);
 
   @override
@@ -104,7 +164,7 @@ class TossProjectListTile extends StatelessWidget {
     if (plant.status == 'SLEEPING') {
       lottieFile = 'assets/pot_sleeping.json'; // (신규) 잠자는 Lottie
     } else {
-      switch (plant.plant) {
+      switch (plant.plantType) {
         case 'rose': lottieFile = 'assets/rose.json'; break;
         case 'cactus': lottieFile = 'assets/cactus.json'; break;
         case 'bonsai': lottieFile = 'assets/bonsai.json'; break;

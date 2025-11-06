@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../widgets/profile_menu.dart';
 
-// (★★★★★ 수정 ★★★★★: StatefulWidget으로 변경)
 class WorkspaceSelectionPage extends StatefulWidget {
   final Function(String, String) onWorkspaceSelected;
-  final IO.Socket socket; // (★★★★★ 수정 ★★★★★: socket을 받음)
+  final IO.Socket socket;
+  final User currentUser;
+  final Map<String, dynamic>? userData;
 
   const WorkspaceSelectionPage({
     Key? key,
     required this.onWorkspaceSelected,
-    required this.socket, // (★★★★★ 수정 ★★★★★: getWorkspaces 제거)
+    required this.socket,
+    required this.currentUser,
+    this.userData,
   }) : super(key: key);
 
   @override
@@ -17,7 +22,6 @@ class WorkspaceSelectionPage extends StatefulWidget {
 }
 
 class _WorkspaceSelectionPageState extends State<WorkspaceSelectionPage> {
-  // (★★★★★ 신규 ★★★★★: 상태 변수들)
   List<dynamic> _workspaces = []; // 서버에서 받은 워크스페이스 목록
   bool _isLoading = true;
 
@@ -72,7 +76,7 @@ class _WorkspaceSelectionPageState extends State<WorkspaceSelectionPage> {
           TextButton(
             onPressed: () {
               if (nameController.text.isNotEmpty) {
-                // (★★★★★ 신규 ★★★★★: 서버에 생성 이벤트 전송)
+                // 서버에 생성 이벤트 전송
                 widget.socket.emit('create-workspace', {
                   'name': nameController.text
                 });
@@ -92,16 +96,20 @@ class _WorkspaceSelectionPageState extends State<WorkspaceSelectionPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text("워크스페이스 선택"),
-        // (★★★★★ 신규 ★★★★★: 워크스페이스 추가 버튼)
+        // 워크스페이스 추가 버튼
         actions: [
           IconButton(
             icon: Icon(Icons.add),
             tooltip: "새 워크스페이스 생성",
             onPressed: _showCreateWorkspaceDialog,
           ),
+          ProfileMenuButton(
+            currentUser: widget.currentUser,
+            userData: widget.userData,
+          )
         ],
       ),
-      // (★★★★★ 수정 ★★★★★: 로딩 상태 및 서버 데이터로 ListView 빌드)
+      // 로딩 상태 및 서버 데이터로 ListView 빌드
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
           : ListView.builder(
@@ -117,7 +125,7 @@ class _WorkspaceSelectionPageState extends State<WorkspaceSelectionPage> {
             title: Text(wsName),
             subtitle: Text("ID: ${ws['id']}"),
             onTap: () {
-              // (★★★★★ 수정 ★★★★★: 부모(AppCore)의 콜백 함수 호출)
+              // 부모(AppCore)의 콜백 함수 호출
               widget.onWorkspaceSelected(ws['id'], ws['name']);
             },
           );

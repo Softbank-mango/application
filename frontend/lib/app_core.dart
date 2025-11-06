@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
 import '../l10n/app_localizations.dart';
@@ -28,7 +29,7 @@ class AppCore extends StatefulWidget {
 class _AppCoreState extends State<AppCore> {
   // 'late' 대신 Nullable 'IO.Socket?'로 변경
   IO.Socket? socket;
-  List<Plant> shelf = []; // 실시간 장식장
+  // List<Plant> shelf = [];
   final player = AudioPlayer();
 
   List<LogEntry> globalLogs = [];
@@ -37,23 +38,52 @@ class _AppCoreState extends State<AppCore> {
   List<FlSpot> memData = [FlSpot(0, 128)];
   double _timeCounter = 1.0;
 
+  User? _currentUser;
+  Map<String, dynamic>? _userData; // (Firestore의 'users' 문서 데이터)
+  bool _isLoadingUser = true; // (로딩 상태)
+
   @override
   void initState() {
     super.initState();
     // 비동기 초기화 함수 호출
     _initializeSocket();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    // 1. Auth에서 현재 사용자 가져오기
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("오류: AppCore에 진입했으나 사용자가 null입니다.");
+      FirebaseAuth.instance.signOut(); // 강제 로그아웃
+      return;
+    }
+
+    // 2. Firestore에서 'users' 컬렉션의 추가 정보(role 등) 가져오기
+    DocumentSnapshot<Map<String, dynamic>>? userDataDoc;
+    try {
+      final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      userDataDoc = await docRef.get();
+    } catch (e) {
+      print("Firestore 사용자 정보 로드 실패: $e");
+    }
+
+    // 3. 상태 변수에 저장하고 UI 갱신 (로딩 완료)
+    if (mounted) {
+      setState(() {
+        _currentUser = user;
+        _userData = userDataDoc?.data();
+        _isLoadingUser = false;
+      });
+    }
   }
 
   // 소켓 비동기 초기화 함수
   Future<void> _initializeSocket() async {
-    // connectToSocket이 완료되길 기다림 (토큰 받아오기 등)
     await connectToSocket();
-
-    // (중요) 소켓이 초기화된 후, 위젯을 다시 빌드하도록 setState 호출
     if (mounted) {
       setState(() {
-        // 이 setState 호출로 build 메서드가 다시 실행되며,
-        // socket이 더 이상 null이 아니므로 WorkspaceSelectionPage가 로드됩니다.
+        // 소켓 초기화 완료
       });
     }
   }
@@ -61,14 +91,14 @@ class _AppCoreState extends State<AppCore> {
   // 모든 리스너를 socket.off로 제거
   @override
   void dispose() {
-    socket?.off('current-shelf', _onCurrentShelf);
     socket?.off('new-plant', _onNewPlant);
     socket?.off('plant-update', _onPlantUpdate);
     socket?.off('new-log', _onNewLog);
     socket?.off('status-update', _onStatusUpdate);
-    socket?.off('plant-complete', _onPlantComplete);
     socket?.off('reaction-update', _onReactionUpdate);
     socket?.off('metrics-update', _onMetricsUpdate);
+    socket?.off('workspaces-list', _onWorkspacesList);
+    socket?.off('get-my-workspaces', _onGetMyWorkspaces);
 
     socket?.dispose();
     player.dispose();
@@ -83,7 +113,7 @@ class _AppCoreState extends State<AppCore> {
     }
     if (token == null) {
       print("로그인 사용자 없음. 소켓 연결 안함.");
-      return; // 토큰 없으면 연결 시도 안함
+      return;
     }
 
     String hostUrl;
@@ -91,8 +121,8 @@ class _AppCoreState extends State<AppCore> {
       final uri = Uri.base.origin;
       hostUrl = kDebugMode ? 'http://localhost:8080' : uri.toString();
     } else {
-      // 'deplight-softbank' 프로젝트 URL로 변경해야 할 수도 있습니다.)
-      hostUrl = 'https://deplight-82312839239.asia-northeast3.run.app';
+      // deplight-softbank 프로젝트 URL이 맞는지 확인 필요 (TODO)
+      hostUrl = 'https://deplight-softbank.asia-northeast3.run.app';
     }
 
     socket = IO.io(hostUrl, <String, dynamic>{
@@ -103,52 +133,44 @@ class _AppCoreState extends State<AppCore> {
       }
     });
 
-    // 익명 콜백 대신 별도로 분리된 메소드를 연결
-    socket?.on('current-shelf', _onCurrentShelf);
     socket?.on('new-plant', _onNewPlant);
     socket?.on('plant-update', _onPlantUpdate);
     socket?.on('new-log', _onNewLog);
     socket?.on('status-update', _onStatusUpdate);
-    socket?.on('plant-complete', _onPlantComplete);
     socket?.on('reaction-update', _onReactionUpdate);
     socket?.on('metrics-update', _onMetricsUpdate);
 
-    // 워크스페이스 관련 리스너 추가
+    // 워크스페이스 관련 리스너 (WorkspaceSelectionPage로 이동 예정)
     socket?.on('workspaces-list', _onWorkspacesList);
     socket?.on('get-my-workspaces', _onGetMyWorkspaces);
   }
 
-
-  // 모든 소켓 리스너를 별도 메소드로 분리 ---
-  // (모든 함수 상단에 if (!mounted) return; 안전장치 추가)
-
+  // _onCurrentShelf 메소드 전체
+  /*
   void _onCurrentShelf(dynamic data) {
     if (!mounted) return;
     setState(() {
-      shelf = (data as List).map((p) => Plant(
-          id: p['id'], plant: p['plant'], version: p['version'],
-          description: p['description'] ?? 'No description provided.',
-          status: p['status'],
-          // (DB 구조 변경으로 owner 필드가 없을 수 있음. Null 처리 필요)
-          owner: p['owner'] ?? 'Unknown',
-          reactions: List<String>.from(p['reactions'])
-      )..currentStatusMessage = (p['status'] == 'HEALTHY' ? '배포 완료됨' : (p['status'] == 'FAILED' ? '배포 실패함' : (p['status'] == 'SLEEPING' ? '겨울잠 상태' : '대기 중')))
-      ).toList();
+      shelf = ...
     });
   }
+  */
+
 
   void _onNewPlant(dynamic data) {
     if (!mounted) return;
+
+    final String workspaceId = data['workspaceId'];
+
     final newPlant = Plant(
-        id: data['id'], plant: data['plant'], version: data['version'],
+        id: data['id'],
+        plantType: data['plantType'] ?? 'pot',
+        version: data['version'],
         description: data['description'] ?? 'New deployment...',
         status: data['status'],
-        owner: data['owner'] ?? 'Unknown',
+        ownerUid: data['ownerUid'],
+        workspaceId: data['workspaceId'],
         reactions: []
     );
-    setState(() {
-      shelf.add(newPlant);
-    });
 
     if (mounted) {
       Navigator.push(
@@ -156,11 +178,14 @@ class _AppCoreState extends State<AppCore> {
         MaterialPageRoute(
           builder: (context) => DeploymentPage(
             plant: newPlant,
-            socket: socket!, // (이 시점엔 socket이 null이 아님을 확신)
+            socket: socket!,
             initialMetrics: currentMetrics,
             initialCpuData: cpuData,
             initialMemData: memData,
             globalLogs: globalLogs,
+            currentUser: _currentUser!,
+            userData: _userData,
+            workspaceId: workspaceId,
           ),
         ),
       );
@@ -170,15 +195,18 @@ class _AppCoreState extends State<AppCore> {
 
   void _onPlantUpdate(dynamic data) {
     if (!mounted) return;
+    // shelf 변수가 없으므로 이 로직은 이제 ShelfPage에서 처리되어야 함
+    /*
     setState(() {
       try {
         final plant = shelf.firstWhere((p) => p.id == data['id']);
         plant.status = data['status'];
         plant.version = data['version'] ?? plant.version;
-        plant.plant = data['plant'] ?? plant.plant;
+        plant.plantType = data['plantType'] ?? plant.plantType;
         if(plant.status == 'SLEEPING') plant.currentStatusMessage = '겨울잠 상태';
       } catch (e) { print('Update for unknown plant: ${data['id']}'); }
     });
+    */
   }
 
   void _onNewLog(dynamic data) {
@@ -193,17 +221,22 @@ class _AppCoreState extends State<AppCore> {
         globalLogs.add(log);
         if (globalLogs.length > 100) globalLogs.removeAt(0);
       } else {
+        // (참고: shelf 변수가 없으므로 이 로직은 이제 ShelfPage 또는 DeploymentPage에서 처리되어야 함)
+        /*
         try {
           final plant = shelf.firstWhere((p) => p.id == data['id']);
           plant.logs.add(log);
           if (log.status == 'AI_INSIGHT') plant.aiInsight = log.message;
         } catch (e) { print('Log for unknown plant: ${data['id']}'); }
+        */
       }
     });
   }
 
   void _onStatusUpdate(dynamic data) {
     if (!mounted) return;
+    // shelf 변수가 없으므로 이 로직은 이제 ShelfPage 또는 DeploymentPage에서 처리되어야 함
+    /*
     setState(() {
       try {
         final plant = shelf.firstWhere((p) => p.id == data['id']);
@@ -211,23 +244,13 @@ class _AppCoreState extends State<AppCore> {
         plant.currentStatusMessage = data['message'];
       } catch (e) { print('Status for unknown plant: ${data['id']}'); }
     });
-  }
-
-  void _onPlantComplete(dynamic data) {
-    if (!mounted) return;
-    setState(() {
-      try {
-        final plant = shelf.firstWhere((p) => p.id == data['id']);
-        plant.status = data['status'];
-        plant.plant = data['plant'];
-        plant.version = data['version'];
-      } catch (e) { print('Complete for unknown plant: ${data['id']}'); }
-    });
-    player.play(AssetSource('success.mp3'));
+    */
   }
 
   void _onReactionUpdate(dynamic data) {
     if (!mounted) return;
+    // shelf 변수가 없으므로 이 로직은 이제 ShelfPage에서 처리되어야 함
+    /*
     setState(() {
       try {
         final plant = shelf.firstWhere((p) => p.id == data['id']);
@@ -240,6 +263,7 @@ class _AppCoreState extends State<AppCore> {
         });
       } catch (e) { print('Reaction for unknown plant: ${data['id']}'); }
     });
+    */
   }
 
   void _onMetricsUpdate(dynamic data) {
@@ -253,20 +277,16 @@ class _AppCoreState extends State<AppCore> {
     });
   }
 
-  // 워크스페이스 리스너 콜백
-  // (WorkspaceSelectionPage로 이동해야 할 수도 있음)
   void _onWorkspacesList(dynamic data) {
-    // 이 콜백은 WorkspaceSelectionPage가 직접 처리하도록 위임하는 것이 좋습니다.
-    // 여기서는 AppCore가 목록을 관리하지 않으므로 비워둡니다.
+    // (이 콜백은 WorkspaceSelectionPage가 직접 처리)
   }
 
   void _onGetMyWorkspaces(dynamic data) {
-    // 서버가 목록 갱신을 요청할 때 사용 (WorkspaceSelectionPage가 처리)
+    // (이 콜백은 WorkspaceSelectionPage가 직접 처리)
   }
 
-  // socket null check 및 workspaceId 전달
   void _startNewDeployment(BuildContext context, String workspaceId) {
-    if (socket == null) return; // 소켓이 준비 안됐으면 무시
+    if (socket == null) return;
 
     final nameController = TextEditingController();
     final descController = TextEditingController();
@@ -295,7 +315,7 @@ class _AppCoreState extends State<AppCore> {
                   'version': newName,
                   'description': newDesc,
                   'isWakeUp': false,
-                  'workspaceId': workspaceId // (중요)
+                  'workspaceId': workspaceId
                 });
 
                 Navigator.push(context, MaterialPageRoute(
@@ -309,16 +329,14 @@ class _AppCoreState extends State<AppCore> {
     );
   }
 
-  // socket null check
-  void _sendSlackReaction(int id, String emoji) {
-    if (socket == null) return; // 소켓이 준비 안됐으면 무시
+  void _sendSlackReaction(String id, String emoji) {
+    if (socket == null) return;
     socket!.emit('slack-reaction', {'id': id, 'emoji': emoji});
   }
 
   @override
   Widget build(BuildContext context) {
-    // socket이 초기화되기 전이면 로딩 화면 표시
-    if (socket == null) {
+    if (_isLoadingUser || socket == null) {
       return Scaffold(
         body: Center(
           child: Column(
@@ -326,16 +344,17 @@ class _AppCoreState extends State<AppCore> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text("백엔드 서버와 연결 중..."),
+              Text(_isLoadingUser ? "사용자 정보 로드 중..." : "백엔드 서버와 연결 중..."),
             ],
           ),
         ),
       );
     }
 
-    // (socket이 null이 아닐 때만 WorkspaceSelectionPage를 빌드)
     return WorkspaceSelectionPage(
-      socket: socket!, // (null check 했으므로 '!' 사용)
+      socket: socket!,
+      currentUser: _currentUser!,
+      userData: _userData,
       onWorkspaceSelected: (workspaceId, workspaceName) {
 
         socket!.emit('join-workspace', workspaceId);
@@ -344,27 +363,25 @@ class _AppCoreState extends State<AppCore> {
           context,
           MaterialPageRoute(
             builder: (context) => ShelfPage(
+              currentUser: _currentUser!,
+              userData: _userData,
               workspaceId: workspaceId,
               workspaceName: workspaceName,
-              shelf: shelf,
+              socket: socket!, // socket 전달
+              // shelf: shelf,
               onDeploy: () => _startNewDeployment(context, workspaceId),
               onPlantTap: (plant) {
-
                 if (plant.status == 'SLEEPING') {
-                  // (서버에 깨우기 이벤트 전송)
                   socket!.emit('start-deploy', {
                     'id': plant.id,
                     'isWakeUp': true,
                     'workspaceId': workspaceId
                   });
-
                   Navigator.push(context, MaterialPageRoute(
                       builder: (context) => DeploymentLoadingPage(),
                       settings: RouteSettings(name: '/loading')
                   ));
-
                 } else {
-                  // (기존 배포 상세 페이지 이동 로직)
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -375,6 +392,9 @@ class _AppCoreState extends State<AppCore> {
                         initialCpuData: cpuData,
                         initialMemData: memData,
                         globalLogs: globalLogs,
+                        currentUser: _currentUser!,
+                        userData: _userData,
+                        workspaceId: workspaceId,
                       ),
                     ),
                   );

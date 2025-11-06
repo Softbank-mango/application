@@ -1,20 +1,35 @@
 import 'package:flutter/material.dart';
 import '../widgets/profile_menu.dart';
 import '../l10n/app_localizations.dart';
-import 'language_selection.dart'; // (신규)
-import '../app_state.dart'; // (신규)
+import 'language_selection.dart';
+import '../app_state.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // --- (7) "설정" 페이지 (Placeholder) ---
 class SettingsPage extends StatelessWidget {
+  final User currentUser;
+  final Map<String, dynamic>? userData;
+
+  const SettingsPage({
+    Key? key,
+    required this.currentUser,
+    this.userData,
+  }) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final appState = AppState.instance; // (신규)
+    final appState = AppState.instance;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.settings),
-        actions: [ProfileMenuButton()],
+        actions: [
+          ProfileMenuButton(
+            currentUser: currentUser,
+            userData: userData,
+          )
+        ],
       ),
       body: ListView(
         padding: EdgeInsets.all(16.0),

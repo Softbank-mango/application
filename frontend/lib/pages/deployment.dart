@@ -5,7 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
-
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/plant_model.dart';
 import '../models/logEntry_model.dart';
 import '../widgets/profile_menu.dart';
@@ -19,6 +19,9 @@ class DeploymentPage extends StatefulWidget {
   final List<FlSpot> initialCpuData;
   final List<FlSpot> initialMemData;
   final List<LogEntry> globalLogs;
+  final User currentUser;
+  final Map<String, dynamic>? userData;
+  final String workspaceId;
 
   const DeploymentPage(
       {Key? key,
@@ -27,7 +30,11 @@ class DeploymentPage extends StatefulWidget {
         required this.initialMetrics,
         required this.initialCpuData,
         required this.initialMemData,
-        required this.globalLogs})
+        required this.globalLogs,
+        required this.currentUser,
+        this.userData,
+        required this.workspaceId,
+      })
       : super(key: key);
 
   @override
@@ -104,7 +111,7 @@ class _DeploymentPageState extends State<DeploymentPage>
     if (!mounted || data['id'] != plant.id) return;
     setState(() {
       plant.status = data['status'];
-      plant.plant = data['plant'];
+      plant.plantType = data['plant'];
       plant.version = data['version'];
     });
   }
@@ -142,7 +149,8 @@ class _DeploymentPageState extends State<DeploymentPage>
       'id': plant.id, // (신규) 겨울잠은 "id"가 필요
       'version': plant.version,
       'description': 'Waking up from hibernation...',
-      'isWakeUp': true // (신규)
+      'isWakeUp': true, // (신규)
+      'workspaceId': widget.workspaceId
     });
   }
 
@@ -459,7 +467,11 @@ class _DeploymentPageState extends State<DeploymentPage>
                   _tabController.animateTo(0);
                 });
                 widget.socket.emit('start-deploy', {
-                  'version': '${plant.version} (Env Update)', 'description': '환경 변수 업데이트', 'id': plant.id
+                  'version': '${plant.version} (Env Update)',
+                  'description': '환경 변수 업데이트',
+                  'id': plant.id, // (Env 업데이트는 기존 앱 대상이므로 id 포함)
+                  'isWakeUp': true,
+                  'workspaceId': widget.workspaceId
                 });
               },
             ),
@@ -469,7 +481,7 @@ class _DeploymentPageState extends State<DeploymentPage>
     );
   }
 
-  // --- (신규) "겨울잠" 상태일 때 보여줄 UI ---
+  // "겨울잠" 상태일 때 보여줄 UI ---
   Widget _buildSleepingView() {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
@@ -522,7 +534,12 @@ class _DeploymentPageState extends State<DeploymentPage>
       return Scaffold(
         appBar: AppBar(
           title: Text('${l10n.workbenchTitle} ${plant.version}'),
-          actions: [ProfileMenuButton()],
+          actions: [
+            ProfileMenuButton(
+              currentUser: widget.currentUser,
+              userData: widget.userData,
+            ),
+          ],
         ),
         body: _buildSleepingView(), // <-- "겨울잠" UI 표시
       );
@@ -542,7 +559,12 @@ class _DeploymentPageState extends State<DeploymentPage>
     return Scaffold(
       appBar: AppBar(
         title: Text('${l10n.workbenchTitle} ${plant.version}'),
-        actions: [ProfileMenuButton()],
+        actions: [
+          ProfileMenuButton(
+            currentUser: widget.currentUser,
+            userData: widget.userData,
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(40.0),
           child: Container(
