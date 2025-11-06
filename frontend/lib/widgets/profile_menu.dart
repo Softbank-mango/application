@@ -50,12 +50,14 @@ class ProfileMenuButton extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    currentUser.displayName ?? l10n.profileTitle,
+                  // Firestore에 저장된 'displayName'을 사용하고,
+                  // 없으면 Auth의 이메일을, 그것도 없으면 '이름 없음'을 표시
+                    userData?['displayName'] ?? currentUser.email ?? '이름 없음',
                     style: TextStyle(fontWeight: FontWeight.bold, color: theme.textTheme.bodyMedium?.color)
                 ),
-                // 실제 이메일 표시
+                // Auth의 'email' 사용
                 Text(
-                    currentUser.email ?? 'No Email',
+                    currentUser.email ?? '이메일 없음',
                     style: TextStyle(color: theme.hintColor, fontSize: 12)
                 ),
               ],
