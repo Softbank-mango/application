@@ -1,16 +1,1 @@
-{
-  "hosting": {
-    "public": "build/web",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  }
-}
+{"hosting":{"public":"build/web","ignore":["firebase.json","**/.*","**/node_modules/**"],"rewrites":[{"source":"**","destination":"/index.html"}]},"flutter":{"platforms":{"android":{"default":{"projectId":"deplight-softbank","appId":"1:82312839239:android:89abba52bc8137d43a7162","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"deplight-softbank","configurations":{"android":"1:82312839239:android:89abba52bc8137d43a7162","ios":"1:82312839239:ios:1ce28159c7995b893a7162","macos":"1:82312839239:ios:1ce28159c7995b893a7162","web":"1:82312839239:web:af630e97dde269133a7162","windows":"1:82312839239:web:73ea53ec819e272e3a7162"}}}}}}
