@@ -58,7 +58,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
               // 로고
               Row(
                 children: [
-                  Image.asset('assets/deplight_logo_52.png', height: 40, width: 40, fit: BoxFit.contain),
+                  Image.asset('assets/logo_small.png', height: 40, width: 40, fit: BoxFit.contain),
                   const SizedBox(width: 8),
                   Text(
                     'Deplight',
