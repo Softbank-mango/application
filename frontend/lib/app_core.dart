@@ -24,13 +24,15 @@ import 'models/workspace.dart';
 import 'models/user_data.dart';
 import 'widgets/top_bar.dart';
 import 'pages/profile.dart';
+import 'pages/settings.dart';
+import 'pages/deployment.dart';
 
 class AppCore extends StatefulWidget {
   @override
   _AppCoreState createState() => _AppCoreState();
 }
 
-enum AppPage { workspaceSelection, shelf, profile }
+enum AppPage { workspaceSelection, shelf, profile, settings, deployment }
 
 class _AppCoreState extends State<AppCore> {
   IO.Socket? socket;
@@ -52,6 +54,7 @@ class _AppCoreState extends State<AppCore> {
   String? _selectedWorkspaceId;
   String _selectedWorkspaceName = "";
 
+  Plant? _selectedPlant;
   AppPage _currentPage = AppPage.workspaceSelection;
 
   // 로딩 상태를 하나로 통합
@@ -199,24 +202,10 @@ class _AppCoreState extends State<AppCore> {
     );
 
     if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => DeploymentPage(
-            plant: newPlant,
-            socket: socket!,
-            initialMetrics: currentMetrics,
-            initialCpuData: cpuData,
-            initialMemData: memData,
-            globalLogs: globalLogs,
-            currentUser: _currentUser!,
-            userData: _userData,
-            workspaceId: workspaceId,
-            onShowProfile: _showProfilePage,
-          ),
-        ),
-      );
-      Navigator.of(context).popUntil((route) => route.settings.name != '/loading');
+      setState(() {
+        _selectedPlant = newPlant;
+        _currentPage = AppPage.deployment; // 배포 페이지로 즉시 이동
+      });
     }
   }
 
@@ -410,7 +399,22 @@ class _AppCoreState extends State<AppCore> {
   // 프로필에서 대시보드(Shelf)로 복귀
   void _showShelfPage() {
     setState(() {
-      _currentPage = AppPage.shelf; // 상태 변경
+      _currentPage = AppPage.shelf;
+      _selectedPlant = null; // (선택된 플랜트 해제)
+    });
+  }
+
+// ProfileMenu에서 "워크스페이스 설정" 누르면 Settings로
+  void _showSettingsPage() {
+    setState(() {
+      _currentPage = AppPage.settings;
+    });
+  }
+
+  // SettingsPage에서 "프로필로 돌아가기" 누르면 Profile
+  void _goBackToProfile() {
+    setState(() {
+      _currentPage = AppPage.profile;
     });
   }
 
@@ -517,24 +521,28 @@ class _AppCoreState extends State<AppCore> {
         onLogout: _onLogout,
         goBackToWorkspaceSelection: _goBackToWorkspaceSelection,
         onWorkspaceSelected: _onWorkspaceSelected,
-        // (TopBar에서 "새 워크스페이스" 클릭 시 이 함수 호출)
         onCreateWorkspace: () => _showCreateWorkspaceDialog(context),
-        // (ProfileMenuButton에서 "마이페이지" 클릭 시 이 함수 호출)
         onShowProfile: _showProfilePage,
+        onShowSettings: _showSettingsPage,
       ),
       // --- (상태에 따라 바뀌는 body) ---
       body: buildBody(),
       // --- (Shelf 페이지일 때만 보이는 FAB) ---
-      floatingActionButton: _currentPage == AppPage.shelf
-          ? FloatingActionButton.extended(
-        onPressed: () => _startNewDeployment(context, _selectedWorkspaceId!),
-        label: Text(l10n.deployNewApp),
-        icon: Icon(Icons.add),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        shape: StadiumBorder(),
-      )
-          : null, // 그 외 페이지(프로필 등)에서는 숨김
+      floatingActionButton: Visibility(
+        // 2. _currentPage 상태에 따라 보이기/숨기기
+        visible: _currentPage == AppPage.shelf,
+
+        // 3. 자식 위젯은 항상 존재 (null이 아님)
+        child: FloatingActionButton.extended(
+          key: const ValueKey('fab-shelf'), // (Key는 혹시 모르니 그대로 둡니다)
+          onPressed: () => _startNewDeployment(context, _selectedWorkspaceId!),
+          label: Text(l10n.deployNewApp),
+          icon: Icon(Icons.add),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          shape: StadiumBorder(),
+        ),
+      ),
     );
   }
 
@@ -562,42 +570,49 @@ class _AppCoreState extends State<AppCore> {
           onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
           onDeploy: () => _startNewDeployment(context, _selectedWorkspaceId!),
           onPlantTap: (plant) {
-            // (기존 onPlantTap 로직 - 생략)
-            // ... (Navigator.push로 DeploymentPage 띄우기)
             if (plant.status == 'SLEEPING') {
+              // (겨울잠 깨우기 로직)
               socket!.emit('start-deploy', {
                 'id': plant.id, 'isWakeUp': true, 'workspaceId': _selectedWorkspaceId!
               });
-              Navigator.push(context, MaterialPageRoute(
-                  builder: (context) => DeploymentLoadingPage(),
-                  settings: RouteSettings(name: '/loading')
-              ));
+              // (로딩 페이지를 따로 만들거나, DeploymentPage가 로딩 상태를 처리해야 함)
+              // (일단 배포 페이지로 바로 이동시킴)
+              setState(() {
+                _selectedPlant = plant;
+                _currentPage = AppPage.deployment;
+              });
             } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => DeploymentPage(
-                    plant: plant,
-                    socket: socket!,
-                    initialMetrics: currentMetrics,
-                    initialCpuData: cpuData,
-                    initialMemData: memData,
-                    globalLogs: globalLogs,
-                    currentUser: _currentUser!,
-                    userData: _userData,
-                    workspaceId: _selectedWorkspaceId!,
-                    onShowProfile: _showProfilePage,
-                  ),
-                ),
-              );
+              setState(() {
+                _selectedPlant = plant;
+                _currentPage = AppPage.deployment;
+              });
             }
           },
           onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
+        );
+      case AppPage.deployment:
+        if (_selectedPlant == null) {
+          // (오류 처리 - Shelf로 복귀)
+          _showShelfPage();
+          return Center(child: Text("오류: 선택된 앱이 없습니다."));
+        }
+        return DeploymentPage(
+          plant: _selectedPlant!,
+          socket: socket!,
+          currentUser: _currentUser!,
+          userData: _userData,
+          workspaceId: _selectedWorkspaceId!,
+          onGoBackToDashboard: _showShelfPage, // (Shelf로 복귀)
+          onShowSettings: _showSettingsPage, // (설정 페이지로 이동)
         );
       case AppPage.profile:
         return ProfilePage(
           // (ProfilePage에서 "대시보드로 돌아가기" 클릭 시 이 함수 호출)
           onGoBackToDashboard: _showShelfPage,
+        );
+      case AppPage.settings:
+        return SettingsPage(
+          onGoBackToProfile: _goBackToProfile, // (SettingsPage는 프로필로)
         );
     }
   }
