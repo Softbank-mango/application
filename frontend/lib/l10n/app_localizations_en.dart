@@ -12,8 +12,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appName => 'Deplight';
 
   @override
-  String get workspaceSelectTitle =>
-      'Which workspace\nwould you like to go to?';
+  String get workspaceSelectTitle => 'Which workspace\nwould you like to go to?';
 
   @override
   String get apps => 'Apps';
@@ -73,8 +72,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rollbackConfirmTitle => '🚨 Immediate Rollback';
 
   @override
-  String get rollbackConfirmMessage =>
-      'Are you sure you want to roll back to the previous version?';
+  String get rollbackConfirmMessage => 'Are you sure you want to roll back to the previous version?';
 
   @override
   String get rollbackAction => 'Execute Rollback';
@@ -167,8 +165,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get wakeUpTitle => 'This App is Sleeping 💤';
 
   @override
-  String get wakeUpMessage =>
-      'This app was moved to \'Hibernation\' mode to save costs due to 72 hours of inactivity.';
+  String get wakeUpMessage => 'This app was moved to \'Hibernation\' mode to save costs due to 72 hours of inactivity.';
 
   @override
   String get wakeUpButton => 'Wake Up App';

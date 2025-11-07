@@ -165,8 +165,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get wakeUpTitle => '앱이 \'겨울잠\' 상태입니다 💤';
 
   @override
-  String get wakeUpMessage =>
-      '앱이 72시간 동안 트래픽이 없어 비용 절약을 위해 \'겨울잠\' 모드로 전환되었습니다.';
+  String get wakeUpMessage => '앱이 72시간 동안 트래픽이 없어 비용 절약을 위해 \'겨울잠\' 모드로 전환되었습니다.';
 
   @override
   String get wakeUpButton => '앱 깨우기 (Wake Up)';
