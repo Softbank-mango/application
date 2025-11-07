@@ -169,14 +169,21 @@ class _AppCoreState extends State<AppCore> {
     final String workspaceId = data['workspaceId'];
 
     final newPlant = Plant(
-        id: data['id'],
-        plantType: data['plantType'] ?? 'pot',
-        version: data['version'],
-        description: data['description'] ?? 'New deployment...',
-        status: data['status'],
-        ownerUid: data['ownerUid'],
-        workspaceId: data['workspaceId'],
-        reactions: []
+      id: data['id'],
+      plantType: data['plantType'] ?? 'pot',
+      name: data['name'] ?? data['version'] ?? 'New App',
+      githubUrl: data['githubUrl'] ?? data['description'] ?? '',
+      status: data['status'], // (예: "DEPLOYING")
+      lastDeployedAt: Timestamp.now(),
+      cpuUsage: 0.0,
+      memUsage: 0.0,
+      ownerUid: data['ownerUid'] ?? '',
+      workspaceId: data['workspaceId'] ?? '',
+      reactions: [],
+      // DeploymentPage용 필드 초기화
+      logs: [], // 빈 로그 리스트로 시작
+      aiInsight: 'AI 분석 대기 중...', // 기본 AI 메시지
+      currentStatusMessage: data['message'] ?? '배포 시작 중...',
     );
 
     if (mounted) {

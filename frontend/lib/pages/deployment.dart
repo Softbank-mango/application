@@ -113,7 +113,7 @@ class _DeploymentPageState extends State<DeploymentPage>
     setState(() {
       plant.status = data['status'];
       plant.plantType = data['plant'];
-      plant.version = data['version'];
+      plant.name = data['version'];
     });
   }
 
@@ -148,8 +148,8 @@ class _DeploymentPageState extends State<DeploymentPage>
     // 'start-deploy'를 호출하되, "깨우기" 플래그를 전송
     widget.socket.emit('start-deploy', {
       'id': plant.id, // (신규) 겨울잠은 "id"가 필요
-      'version': plant.version,
-      'description': 'Waking up from hibernation...',
+      'name': plant.name,
+      'githubUrl': plant.githubUrl,
       'isWakeUp': true, // (신규)
       'workspaceId': widget.workspaceId
     });
@@ -307,7 +307,7 @@ class _DeploymentPageState extends State<DeploymentPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("${l10n.statusTitle} (${plant.version})", style: theme.textTheme.titleLarge),
+                    Text("${l10n.statusTitle} (${plant.name})", style: theme.textTheme.titleLarge),
                     SizedBox(height: 20), Row( children: [
                       Icon(Icons.circle, color: statusColor, size: 14), SizedBox(width: 8),
                       Text(statusText, style: TextStyle(fontSize: 16, color: statusColor, fontWeight: FontWeight.bold)),
@@ -468,8 +468,8 @@ class _DeploymentPageState extends State<DeploymentPage>
                   _tabController.animateTo(0);
                 });
                 widget.socket.emit('start-deploy', {
-                  'version': '${plant.version} (Env Update)',
-                  'description': '환경 변수 업데이트',
+                  'name': '${plant.name} (Env Update)',
+                  'githubUrl': plant.githubUrl, // 기존 githubUrl 사용
                   'id': plant.id, // (Env 업데이트는 기존 앱 대상이므로 id 포함)
                   'isWakeUp': true,
                   'workspaceId': widget.workspaceId
@@ -534,7 +534,7 @@ class _DeploymentPageState extends State<DeploymentPage>
     if (plant.status == 'SLEEPING') {
       return Scaffold(
         appBar: AppBar(
-          title: Text('${l10n.workbenchTitle} ${plant.version}'),
+          title: Text('${l10n.workbenchTitle} ${plant.name}'),
           actions: [
             ProfileMenuButton(
               currentUser: widget.currentUser,
@@ -560,7 +560,7 @@ class _DeploymentPageState extends State<DeploymentPage>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${l10n.workbenchTitle} ${plant.version}'),
+        title: Text('${l10n.workbenchTitle} ${plant.name}'),
         actions: [
           ProfileMenuButton(
             currentUser: widget.currentUser,
