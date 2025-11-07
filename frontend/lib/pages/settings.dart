@@ -4,11 +4,12 @@ import '../l10n/app_localizations.dart';
 import 'language_selection.dart';
 import '../app_state.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/user_data.dart';
 
 // --- (7) "설정" 페이지 (Placeholder) ---
 class SettingsPage extends StatelessWidget {
   final User currentUser;
-  final Map<String, dynamic>? userData;
+  final UserData? userData;
 
   const SettingsPage({
     Key? key,
@@ -28,6 +29,7 @@ class SettingsPage extends StatelessWidget {
           ProfileMenuButton(
             currentUser: currentUser,
             userData: userData,
+            onLogout: () => FirebaseAuth.instance.signOut(),
           )
         ],
       ),

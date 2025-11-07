@@ -22,6 +22,7 @@ import 'pages/deployment.dart';
 import 'pages/loading.dart';
 import 'models/workspace.dart';
 import 'models/user_data.dart';
+import 'widgets/top_bar.dart';
 
 class AppCore extends StatefulWidget {
   @override
@@ -40,9 +41,9 @@ class _AppCoreState extends State<AppCore> {
   double _timeCounter = 1.0;
 
   User? _currentUser;
-  Map<String, dynamic>? _userData;
+  UserData? _userData;
 
-  List<dynamic> _workspaces = [];
+  List<Workspace> _workspaces = [];
   bool _isLoadingWorkspaces = true;
 
   // 로딩 상태를 하나로 통합
@@ -95,7 +96,9 @@ class _AppCoreState extends State<AppCore> {
     if (mounted) {
       setState(() {
         _currentUser = user;
-        _userData = userDataDoc?.data();
+        if (userDataDoc != null && userDataDoc.exists) {
+          _userData = UserData.fromFirestore(userDataDoc);
+        }
         _isLoading = false; // (로딩 완료)
       });
     }
@@ -273,7 +276,7 @@ class _AppCoreState extends State<AppCore> {
   void _onWorkspacesList(dynamic data) {
     if (!mounted) return;
     setState(() {
-      _workspaces = data as List;
+      _workspaces = (data as List).map((ws) => Workspace.fromMap(ws)).toList();
       _isLoadingWorkspaces = false;
     });
   }

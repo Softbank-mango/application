@@ -4,13 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // Timestamp 때문에 �
 import '../models/user_data.dart';
 import '../models/workspace.dart';
 import '../widgets/profile_menu.dart'; // (로그아웃 버튼을 ProfileMenuButton으로 대체 예정)
+import '../models/user_data.dart';
 
 class WorkspaceSelectionPage extends StatelessWidget {
   final Function(String, String) onWorkspaceSelected;
   final Function(String, String) onCreateWorkspace; // 이름, 설명 모두 받도록 변경
   final Function() onLogout; // 로그아웃 함수 추가
   final User currentUser;
-  final Map<String, dynamic>? userData;
+  final UserData? userData;
   final List<dynamic> workspaces; // AppCore로부터 받은 워크스페이스 목록
 
   const WorkspaceSelectionPage({
@@ -124,7 +125,7 @@ class WorkspaceSelectionPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final isUserAdmin = userData?['role'] == 'admin'; // 사용자 역할 확인
+    final isUserAdmin = userData?.role == 'admin'; // 사용자 역할 확인
 
     return Scaffold(
       body: Container(
@@ -246,17 +247,10 @@ class WorkspaceSelectionPage extends StatelessWidget {
                     ),
                     itemCount: workspaces.length, // '생성' 버튼을 그리드에서 제외했으므로 실제 워크스페이스 수만 사용
                     itemBuilder: (context, index) {
-                      final wsData = workspaces[index];
+                      final wsIndex = isUserAdmin ? index - 1 : index;
 
                       // Firestore Map을 Workspace 모델 객체로 변환
-                      final workspace = Workspace(
-                        id: wsData['id'],
-                        name: wsData['name'],
-                        description: wsData['description'] ?? '이 워크스페이스에 대한 설명이 없습니다.',
-                        ownerUid: wsData['ownerUid'],
-                        members: List<String>.from(wsData['members'] ?? []),
-                        createdAt: wsData['createdAt'] ?? Timestamp.now(),
-                      );
+                      final Workspace workspace = workspaces[wsIndex];
                       return _buildWorkspaceCard(context, workspace);
                     },
                   ),

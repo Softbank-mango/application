@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../widgets/workspace_switcher.dart';
+import '../models/user_data.dart';
 
 class ShelfPage extends StatefulWidget {
   final String workspaceId;
@@ -15,7 +16,7 @@ class ShelfPage extends StatefulWidget {
   final Function(Plant) onPlantTap;
   final Function(String, String) onSlackReaction;
   final User currentUser;
-  final Map<String, dynamic>? userData;
+  final UserData? userData;
   final IO.Socket socket;
   final List<dynamic> workspaces;
   final Function(String, String) onCreateWorkspace;
@@ -150,6 +151,7 @@ class _ShelfPageState extends State<ShelfPage> {
           ProfileMenuButton(
             currentUser: widget.currentUser,
             userData: widget.userData,
+            onLogout: () => FirebaseAuth.instance.signOut(),
           ),
         ],
       ),
@@ -208,7 +210,7 @@ class TossProjectListTile extends StatelessWidget {
   final Function(String) onSlackReaction;
 
   final User currentUser;
-  final Map<String, dynamic>? userData;
+  final UserData? userData;
 
   const TossProjectListTile({
     Key? key,

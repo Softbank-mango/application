@@ -3,16 +3,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../pages/settings.dart';
 import '../l10n/app_localizations.dart';
 import '../app_state.dart'; // (신규) 글로벌 상태 임포트
+import '../models/user_data.dart';
 
-// --- (9) 프로필 메뉴 버튼 위젯 ---
 class ProfileMenuButton extends StatelessWidget {
   final User currentUser;
-  final Map<String, dynamic>? userData;
+  final UserData? userData; // (★★★★★ 수정 ★★★★★: Map -> UserData)
+  final VoidCallback onLogout; // (★★★★★ 신규 ★★★★★: 로그아웃 콜백)
 
   const ProfileMenuButton({
     Key? key,
-    required this.currentUser, // (★★★★★)
-    this.userData,             // (★★★★★)
+    required this.currentUser,
+    this.userData,
+    required this.onLogout, // (★★★★★ 신규 ★★★★★)
   }) : super(key: key);
 
   @override
@@ -38,7 +40,7 @@ class ProfileMenuButton extends StatelessWidget {
         } else if (value == 'mypage') {
           // ... (이전과 동일)
         } else if (value == 'logout') {
-          FirebaseAuth.instance.signOut();
+          onLogout();
         }
         // (신규) 다크 모드 스위치 자체는 onSelected를 호출하지 않음
       },
@@ -52,7 +54,7 @@ class ProfileMenuButton extends StatelessWidget {
                 Text(
                   // Firestore에 저장된 'displayName'을 사용하고,
                   // 없으면 Auth의 이메일을, 그것도 없으면 '이름 없음'을 표시
-                    userData?['displayName'] ?? currentUser.email ?? '이름 없음',
+                    userData?.displayName ?? currentUser.email ?? '이름 없음',
                     style: TextStyle(fontWeight: FontWeight.bold, color: theme.textTheme.bodyMedium?.color)
                 ),
                 // Auth의 'email' 사용
@@ -63,21 +65,22 @@ class ProfileMenuButton extends StatelessWidget {
               ],
             )
         ),
-        // PopupMenuItem<String>(
-        //     value: 'admin',
-        //     enabled: false,
-        //     child: Row(
-        //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        //       children: [
-        //         Text(l10n.profileTitle),
-        //         Container(
-        //           padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        //           decoration: BoxDecoration(color: Colors.red[100], borderRadius: BorderRadius.circular(4)),
-        //           child: Text(l10n.profileRole, style: TextStyle(color: Colors.red[700], fontSize: 10, fontWeight: FontWeight.bold)),
-        //         )
-        //       ],
-        //     )
-        // ),
+        if (userData?.role == 'admin')
+          PopupMenuItem<String>(
+              value: 'admin',
+              enabled: false,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(l10n.profileTitle), // (이 텍스트는 'Admin' 등으로 변경하는 것이 좋습니다)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.red[100], borderRadius: BorderRadius.circular(4)),
+                    child: Text(l10n.profileRole, style: TextStyle(color: Colors.red[700], fontSize: 10, fontWeight: FontWeight.bold)),
+                  )
+                ],
+              )
+          ),
         PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'mypage',

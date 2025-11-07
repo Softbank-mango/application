@@ -10,6 +10,7 @@ import '../models/plant_model.dart';
 import '../models/logEntry_model.dart';
 import '../widgets/profile_menu.dart';
 import '../l10n/app_localizations.dart';
+import '../models/user_data.dart';
 
 // --- (6) "배포 상세" 페이지 (작업대) ---
 class DeploymentPage extends StatefulWidget {
@@ -20,7 +21,7 @@ class DeploymentPage extends StatefulWidget {
   final List<FlSpot> initialMemData;
   final List<LogEntry> globalLogs;
   final User currentUser;
-  final Map<String, dynamic>? userData;
+  final UserData? userData;
   final String workspaceId;
 
   const DeploymentPage(
@@ -538,6 +539,7 @@ class _DeploymentPageState extends State<DeploymentPage>
             ProfileMenuButton(
               currentUser: widget.currentUser,
               userData: widget.userData,
+              onLogout: () => FirebaseAuth.instance.signOut(),
             ),
           ],
         ),
@@ -563,6 +565,7 @@ class _DeploymentPageState extends State<DeploymentPage>
           ProfileMenuButton(
             currentUser: widget.currentUser,
             userData: widget.userData,
+            onLogout: () => FirebaseAuth.instance.signOut(),
           ),
         ],
         bottom: PreferredSize(
