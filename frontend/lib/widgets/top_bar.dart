@@ -14,6 +14,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
   final String? selectedWorkspaceId;
   final String selectedWorkspaceName;
   final bool isLoading;
+  final VoidCallback onShowSettings;
 
   // --- 콜백 함수 ---
   final VoidCallback onLogout;
@@ -39,6 +40,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onWorkspaceSelected,
     required this.onCreateWorkspace,
     required this.onShowProfile,
+    required this.onShowSettings,
   }) : super(key: key);
 
   @override
@@ -157,6 +159,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
             userData: userData,
             onLogout: onLogout,
             onShowProfile: onShowProfile,
+            onShowSettings: onShowSettings,
           ),
 
         const SizedBox(width: 24), // 오른쪽 끝 패딩

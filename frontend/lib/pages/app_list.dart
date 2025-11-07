@@ -47,7 +47,7 @@ class _ShelfPageState extends State<ShelfPage> {
   void initState() {
     super.initState();
     widget.socket.on('current-shelf', _onCurrentShelf);
-    // timeago 한국어 설정 (main.dart에서 한 번만 해도 됨)
+    widget.socket.emit('get-current-shelf', widget.workspaceId);
     timeago.setLocaleMessages('ko', timeago.KoMessages());
   }
 

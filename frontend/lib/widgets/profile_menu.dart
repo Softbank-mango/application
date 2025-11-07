@@ -11,6 +11,7 @@ class ProfileMenuButton extends StatelessWidget {
   final UserData? userData;
   final VoidCallback onLogout;
   final VoidCallback onShowProfile;
+  final VoidCallback onShowSettings;
 
   const ProfileMenuButton({
     Key? key,
@@ -18,6 +19,7 @@ class ProfileMenuButton extends StatelessWidget {
     this.userData,
     required this.onLogout,
     required this.onShowProfile,
+    required this.onShowSettings,
   }) : super(key: key);
 
   @override
@@ -29,15 +31,7 @@ class ProfileMenuButton extends StatelessWidget {
     return PopupMenuButton<String>(
       onSelected: (value) {
         if (value == 'settings') {
-          // (참고: SettingsPage도 이 방식으로 변경하는 것이 좋습니다)
-          Navigator.push(context, MaterialPageRoute(
-              builder: (context) => SettingsPage(
-                currentUser: currentUser,
-                userData: userData,
-                onShowProfile: onShowProfile,
-              ),
-              settings: RouteSettings(name: '/settings')
-          ));
+          onShowSettings();
         } else if (value == 'logout') {
           // (수정) onLogout 콜백을 사용하도록 통일
           onLogout();
