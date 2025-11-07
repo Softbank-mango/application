@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../widgets/workspace_switcher.dart';
 import '../models/user_data.dart';
+import '../widgets/top_bar.dart';
 
 class ShelfPage extends StatefulWidget {
   final String workspaceId;
@@ -130,32 +131,7 @@ class _ShelfPageState extends State<ShelfPage> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.workspaceName),
-        actions: [
-          WorkspaceSwitcher(
-            workspaces: widget.workspaces,
-            currentWorkspaceId: widget.workspaceId,
-            currentWorkspaceName: widget.workspaceName,
-            onWorkspaceSelected: (selectedId, selectedName) {
-              if (selectedId == widget.workspaceId) return; // 이미 선택된 페이지
-              // (다른 워크스페이스 선택 시)
-              // 1. 현재 ShelfPage를 닫고 WorkspaceSelectionPage로 돌아감
-              Navigator.of(context).pop();
-              // 2. AppCore가 새 워크스페이스에 Join하고 ShelfPage를 다시 열도록 함
-              // (이 부분은 AppCore의 onWorkspaceSelected 콜백이 처리함)
-            },
-            onCreateWorkspace: _showCreateWorkspaceDialog,
-          ),
-          ProfileMenuButton(
-            currentUser: widget.currentUser,
-            userData: widget.userData,
-            onLogout: () => FirebaseAuth.instance.signOut(),
-          ),
-        ],
-      ),
-      body: Padding(
+    return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,15 +166,6 @@ class _ShelfPageState extends State<ShelfPage> {
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: widget.onDeploy,
-        label: Text(l10n.deployNewApp),
-        icon: Icon(Icons.add),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-        shape: StadiumBorder(),
-      ),
     );
   }
 }

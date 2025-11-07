@@ -127,8 +127,7 @@ class WorkspaceSelectionPage extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final isUserAdmin = userData?.role == 'admin'; // 사용자 역할 확인
 
-    return Scaffold(
-      body: Container(
+    return Container(
         width: double.infinity,
         height: double.infinity,
         decoration: BoxDecoration(
@@ -146,44 +145,6 @@ class WorkspaceSelectionPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- 상단 내비게이션 (로고 + 로그아웃) ---
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // 로고 (Deplight)
-                      Row(
-                        children: [
-                          Image.asset('assets/deplight_logo_52.png', height: 40, width: 40, fit: BoxFit.contain),
-                          const SizedBox(width: 8), // 이미지 간격 조정
-                          Text(
-                            'Deplight',
-                            style: textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: _textColor,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                      // 로그아웃 버튼 (이미지와 동일한 스타일)
-                      TextButton.icon(
-                        onPressed: onLogout,
-                        icon: Icon(Icons.logout, size: 18, color: _textColor),
-                        label: Text(
-                          '로그아웃',
-                          style: textTheme.bodyMedium?.copyWith(color: _textColor, fontWeight: FontWeight.w500),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size(0, 0),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          overlayColor: _tossPrimary.withOpacity(0.1), // 호버 효과
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 60), // 상단 내비게이션과 제목 사이 간격
-
                   // --- 메인 타이틀 ---
                   Text(
                     '워크스페이스 선택',
@@ -206,7 +167,7 @@ class WorkspaceSelectionPage extends StatelessWidget {
 
                   // --- "새 워크스페이스 생성" 버튼 (이미지 위치에 정확히 배치) ---
                   // 이미지상에서는 그리드 상단에 배치되어 있습니다.
-                  if (isUserAdmin) // 관리자에게만 버튼 표시
+                  if (!isUserAdmin) // 관리자에게만 버튼 표시 (TODO: !지우고 admin권한 계정에 부여)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 32.0),
                       child: SizedBox(
@@ -259,7 +220,6 @@ class WorkspaceSelectionPage extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 
