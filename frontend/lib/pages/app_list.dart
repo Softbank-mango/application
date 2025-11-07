@@ -1,26 +1,25 @@
+// app_list.dart (ShelfPage)
+
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
-import '../models/plant_model.dart';
-import '../widgets/profile_menu.dart';
-import 'dart:math';
-import '../l10n/app_localizations.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import '../widgets/workspace_switcher.dart';
+import 'package:timeago/timeago.dart' as timeago; // 시간 표시 (예: "2시간 전")
+import 'package:percent_indicator/percent_indicator.dart'; // 프로그레스 바
+
+import '../models/plant_model.dart'; // (수정된 Plant 모델 임포트)
 import '../models/user_data.dart';
-import '../widgets/top_bar.dart';
 
 class ShelfPage extends StatefulWidget {
   final String workspaceId;
   final String workspaceName;
-  final VoidCallback onDeploy;
+  final VoidCallback onDeploy; // "+ 새 앱 배포" 버튼에 연결됨
   final Function(Plant) onPlantTap;
   final Function(String, String) onSlackReaction;
   final User currentUser;
   final UserData? userData;
   final IO.Socket socket;
-  final List<dynamic> workspaces;
-  final Function(String, String) onCreateWorkspace;
+  final List<dynamic> workspaces; // (TopBar용 - 현재는 사용 안함)
+  final Function(String, String) onCreateWorkspace; // (TopBar용)
 
   const ShelfPage({
     Key? key,
@@ -47,232 +46,313 @@ class _ShelfPageState extends State<ShelfPage> {
   @override
   void initState() {
     super.initState();
-    // AppCore에서 가져온 리스너
-    // ShelfPage가 로드될 때 'current-shelf' 리스너 등록
     widget.socket.on('current-shelf', _onCurrentShelf);
+    // timeago 한국어 설정 (main.dart에서 한 번만 해도 됨)
+    timeago.setLocaleMessages('ko', timeago.KoMessages());
   }
 
   @override
   void dispose() {
-    // 리스너 해제
     widget.socket.off('current-shelf', _onCurrentShelf);
     super.dispose();
   }
 
-  // AppCore에서 가져온 리스너 콜백
+  // (수정) 새 Plant 모델에 맞게 리스너 콜백 업데이트
   void _onCurrentShelf(dynamic data) {
     if (!mounted) return;
     setState(() {
-      shelf = (data as List).map((p) => Plant(
-          id: p['id'],
-          plantType: p['plantType'] ?? 'pot',
-          version: p['version'],
-          description: p['description'] ?? 'No description provided.',
-          status: p['status'],
-          ownerUid: p['ownerUid'] ?? '',
-          workspaceId: p['workspaceId'] ?? '',
-          reactions: List<String>.from(p['reactions'] ?? [])
-      )..currentStatusMessage = (p['status'] == 'HEALTHY' ? '배포 완료됨' : (p['status'] == 'FAILED' ? '배포 실패함' : (p['status'] == 'SLEEPING' ? '겨울잠 상태' : '대기 중')))
-      ).toList();
-      _isLoading = false; // (로딩 완료)
+      shelf = (data as List)
+          .map((p) => Plant.fromMap(p as Map<String, dynamic>))
+          .toList();
+      _isLoading = false;
     });
   }
 
-  void _showCreateWorkspaceDialog() {
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController(); // (설명 컨트롤러 추가)
-    final _formKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("새 워크스페이스 생성"),
-        content: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: nameController,
-                decoration: InputDecoration(labelText: "워크스페이스 이름"),
-                validator: (val) => val!.isEmpty ? '이름을 입력하세요' : null,
+  // (신규) 페이지 헤더 빌드
+  Widget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "앱 대시보드", //
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
-              SizedBox(height: 16),
-              TextFormField( // (설명 필드 추가)
-                controller: descriptionController,
-                decoration: InputDecoration(labelText: "설명"),
-                validator: (val) => val!.isEmpty ? '설명을 입력하세요' : null,
+            ),
+            SizedBox(height: 4),
+            Text(
+              "${widget.workspaceName}의 배포된 앱들을 관리하세요", //
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.grey[600],
               ),
-            ],
+            ),
+          ],
+        ),
+        // (신규) "+ 새 앱 배포" 버튼
+        ElevatedButton.icon(
+          onPressed: widget.onDeploy, // AppCore의 onDeploy 함수 연결
+          icon: Icon(Icons.add, size: 18),
+          label: Text("새 앱 배포"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF678AFB), // 이미지 기준 파란색
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text("취소")),
-          TextButton(
-            onPressed: () {
-              if (_formKey.currentState!.validate()) {
-                widget.onCreateWorkspace(
-                    nameController.text,
-                    descriptionController.text
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 로딩 중이거나 쉘프가 비어있을 때 처리
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 48.0, vertical: 24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. 페이지 헤더 (제목 + 버튼)
+          _buildHeader(context),
+          SizedBox(height: 24),
+
+          // 2. 앱 카드 그리드
+          Expanded(
+            child: shelf.isEmpty
+                ? Center(child: Text('앱이 없습니다. "새 앱 배포"를 눌러 시작하세요.'))
+                : GridView.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4, // 4열 그리드
+                crossAxisSpacing: 24, // 가로 간격
+                mainAxisSpacing: 24, // 세로 간격
+                childAspectRatio: 1.4, // 카드 종횡비 (조절 필요)
+              ),
+              itemCount: shelf.length,
+              itemBuilder: (context, index) {
+                final plant = shelf[index];
+                // (신규) 앱 대시보드 카드 위젯 사용
+                return _AppDashboardCard(
+                  plant: plant,
+                  onTap: () => widget.onPlantTap(plant),
+                  // "깨우기" 버튼 등 카드 내부 액션 (추후 구현)
+                  // onWakeUp: () => ...
                 );
-                Navigator.pop(ctx);
-              }
-            },
-            child: Text("생성"),
+              },
+            ),
           ),
         ],
       ),
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Plant> currentShelf = shelf;
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 16),
-            Text(l10n.apps,
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  color: theme.textTheme.displayLarge?.color,
-                  fontWeight: FontWeight.bold,
-                )),
-            SizedBox(height: 20),
-            Expanded(
-              child: shelf.isEmpty
-                  ? Center(child: Text('앱이 없습니다. "새 앱 배포하기"를 눌러 시작하세요.'))
-                  : ListView.builder(
-                itemCount: shelf.length,
-                itemBuilder: (context, index) {
-                  final plant = shelf[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6.0),
-                    child: TossProjectListTile(
-                      plant: plant,
-                      onTap: () => widget.onPlantTap(plant),
-                      onSlackReaction: (emoji) =>
-                          widget.onSlackReaction(plant.id, emoji),
-                      currentUser: widget.currentUser,
-                      userData: widget.userData,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-    );
-  }
 }
 
-// --- (5) "Toss 스타일 리스트 타일" ---
-class TossProjectListTile extends StatelessWidget {
+// --- (신규) 이미지와 100% 동일한 앱 대시보드 카드 위젯 ---
+class _AppDashboardCard extends StatelessWidget {
   final Plant plant;
   final VoidCallback onTap;
-  final Function(String) onSlackReaction;
+  // final VoidCallback onWakeUp; (추후 구현)
 
-  final User currentUser;
-  final UserData? userData;
-
-  const TossProjectListTile({
+  const _AppDashboardCard({
     Key? key,
     required this.plant,
     required this.onTap,
-    required this.onSlackReaction,
-    required this.currentUser,
-    this.userData,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    String lottieFile;
-    // (신규) "겨울잠" 상태 추가
-    if (plant.status == 'SLEEPING') {
-      lottieFile = 'assets/pot_sleeping.json'; // (신규) 잠자는 Lottie
-    } else {
-      switch (plant.plantType) {
-        case 'rose': lottieFile = 'assets/rose.json'; break;
-        case 'cactus': lottieFile = 'assets/cactus.json'; break;
-        case 'bonsai': lottieFile = 'assets/bonsai.json'; break;
-        case 'sunflower': lottieFile = 'assets/sunflower.json'; break;
-        case 'maple': lottieFile = 'assets/maple.json'; break;
-        case 'cherry_blossom': lottieFile = 'assets/cherry_blossom.json'; break;
-        case 'pot': lottieFile = 'assets/pot.json'; break;
-        default: lottieFile = 'assets/pot.json';
-      }
-    }
-
-    if (plant.status == 'FAILED') lottieFile = 'assets/wilted_fly.json';
-    if (plant.status == 'DEPLOYING' || plant.status == 'PENDING') lottieFile = 'assets/growing.json';
-
-    Color statusColor;
-    String statusText = plant.status;
-    if (plant.status == 'FAILED') { statusColor = Colors.red; }
-    else if (plant.status == 'DEPLOYING' || plant.status == 'PENDING') { statusColor = Colors.orange; }
-    else if (plant.status == 'SLEEPING') { // (신규) 겨울잠 상태
-      statusColor = Colors.grey[400]!;
-      statusText = l10n.plantStatusSleeping; // "겨울잠"
-    }
-    else { statusColor = Colors.green; }
-
-    return Stack(
-        children: [
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(20.0),
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 52, height: 52,
-                      decoration: BoxDecoration(
-                          color: theme.scaffoldBackgroundColor,
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Lottie.asset(lottieFile, width: 52, height: 52, fit: BoxFit.contain),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(plant.version, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                          SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.circle, size: 10, color: statusColor),
-                              SizedBox(width: 6),
-                              Text(statusText, style: theme.textTheme.bodySmall), // (수정)
-                              SizedBox(width: 6),
-                              Text(plant.reactions.join(' '), style: TextStyle(fontSize: 14)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.arrow_forward_ios, size: 16, color: theme.hintColor),
-                  ],
-                ),
-              ),
-            ),
+    return Card(
+      elevation: 2,
+      shadowColor: Colors.black.withOpacity(0.05),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1. 카드 헤더 (아이콘, 이름, URL)
+              _buildCardHeader(context, plant),
+              SizedBox(height: 16),
+              // 2. 상태에 따른 본문
+              Expanded(child: _buildCardBody(context, plant)),
+            ],
           ),
-          if (plant.isSparkling)
-            IgnorePointer(
-              child: Center(
-                child: Lottie.asset('assets/sparkles.json', width: 150, height: 150, repeat: false),
+        ),
+      ),
+    );
+  }
+
+  // 카드 헤더 (아이콘, 이름, URL)
+  Widget _buildCardHeader(BuildContext context, Plant plant) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 아이콘
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Color(0xFFF0F4FF), // 연한 보라색 배경
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(Icons.desktop_windows, color: Color(0xFF678AFB)), //
+        ),
+        SizedBox(width: 12),
+        // 이름, URL
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                plant.name,
+                style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: 2),
+              Text(
+                plant.githubUrl,
+                style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[500]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 카드 본문 (상태에 따라 분기)
+  Widget _buildCardBody(BuildContext context, Plant plant) {
+    // "2시간 전" 계산
+    final String timeAgo = timeago.format(plant.lastDeployedAt.toDate(), locale: 'ko');
+
+    switch (plant.status) {
+      case 'HEALTHY': // "정상" 상태
+      case 'NORMAL':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildStatusChip(Icons.check_circle, "정상", Color(0xFF00B894)),
+            SizedBox(height: 4),
+            Text(timeAgo, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+            Spacer(),
+            _buildProgressBar("CPU", plant.cpuUsage, Color(0xFF678AFB)),
+            SizedBox(height: 8),
+            _buildProgressBar("메모리", plant.memUsage, Color(0xFF00B894)),
+          ],
+        );
+      case 'SLEEPING': // "겨울잠" 상태
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildStatusChip(Icons.pause_circle_outline, "겨울잠", Color(0xFFFDCB6E)),
+            SizedBox(height: 4),
+            Text(timeAgo, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+            Spacer(),
+            Text("앱이 겨울잠 상태입니다", style: TextStyle(color: Colors.grey[600])),
+            SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () { /* 깨우기 로직 (onPlantTap으로 대체) */ },
+              child: Text("깨우기"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFFF0F4FF),
+                foregroundColor: Color(0xFF678AFB),
+                elevation: 0,
+              ),
+            )
+          ],
+        );
+      case 'DEPLOYING': // "배포중" 상태
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildStatusChip(Icons.sync, "배포중", Color(0xFF678AFB)),
+            SizedBox(height: 4),
+            Text("배포중...", style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+            Spacer(),
+            LinearProgressIndicator(color: Color(0xFF678AFB)),
+            SizedBox(height: 4),
+            Text("배포가 진행 중입니다...", style: TextStyle(color: Colors.grey[600])),
+          ],
+        );
+      case 'FAILED': // "오류" 상태
+      default:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildStatusChip(Icons.error, "오류", Color(0xFFD63031)),
+            SizedBox(height: 4),
+            Text(timeAgo, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+            Spacer(),
+            Text("배포에 실패했습니다.", style: TextStyle(color: Color(0xFFD63031))),
+            // (오류 로그 등 추가 정보)
+          ],
+        );
+    }
+  }
+
+  // (Helper) 상태 칩
+  Widget _buildStatusChip(IconData icon, String label, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  // (Helper) 프로그레스 바
+  Widget _buildProgressBar(String label, double percent, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+        SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: LinearPercentIndicator(
+                percent: percent,
+                lineHeight: 8,
+                backgroundColor: Colors.grey[200],
+                progressColor: color,
+                barRadius: Radius.circular(4),
+                padding: EdgeInsets.zero,
               ),
             ),
-        ]
+            SizedBox(width: 8),
+            Text(
+              "${(percent * 100).toInt()}%",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
