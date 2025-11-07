@@ -46,6 +46,9 @@ class _AppCoreState extends State<AppCore> {
   List<Workspace> _workspaces = [];
   bool _isLoadingWorkspaces = true;
 
+  String? _selectedWorkspaceId;
+  String _selectedWorkspaceName = "";
+
   // 로딩 상태를 하나로 통합
   bool _isLoading = true;
 
@@ -367,6 +370,24 @@ class _AppCoreState extends State<AppCore> {
     socket!.emit('slack-reaction', {'id': id, 'emoji': emoji});
   }
 
+  void _goBackToWorkspaceSelection() {
+    // (필요 시 'leave-workspace' 소켓 이벤트 emit)
+    // socket?.emit('leave-workspace', _selectedWorkspaceId);
+    setState(() {
+      _selectedWorkspaceId = null;
+      _selectedWorkspaceName = "";
+    });
+  }
+
+  // (신규) TopBar 또는 WorkspaceSelectionPage에서 워크스페이스를 선택했을 때 호출할 함수
+  void _onWorkspaceSelected(String workspaceId, String workspaceName) {
+    socket!.emit('join-workspace', workspaceId);
+    setState(() {
+      _selectedWorkspaceId = workspaceId;
+      _selectedWorkspaceName = workspaceName;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading || _isLoadingWorkspaces || socket == null) {
@@ -384,63 +405,46 @@ class _AppCoreState extends State<AppCore> {
       );
     }
 
-    return WorkspaceSelectionPage(
-      currentUser: _currentUser!,
-      userData: _userData,
-      workspaces: _workspaces,
-      onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
-      onLogout: _onLogout,
-
-      onWorkspaceSelected: (workspaceId, workspaceName) {
-        socket!.emit('join-workspace', workspaceId);
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ShelfPage(
-              currentUser: _currentUser!,
-              userData: _userData,
-              workspaceId: workspaceId,
-              workspaceName: workspaceName,
-              socket: socket!, // socket 전달
-              workspaces: _workspaces,
-              onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
-              onDeploy: () => _startNewDeployment(context, workspaceId),
-              onPlantTap: (plant) {
-                if (plant.status == 'SLEEPING') {
-                  socket!.emit('start-deploy', {
-                    'id': plant.id,
-                    'isWakeUp': true,
-                    'workspaceId': workspaceId
-                  });
-                  Navigator.push(context, MaterialPageRoute(
-                      builder: (context) => DeploymentLoadingPage(),
-                      settings: RouteSettings(name: '/loading')
-                  ));
-                } else {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => DeploymentPage(
-                        plant: plant,
-                        socket: socket!,
-                        initialMetrics: currentMetrics,
-                        initialCpuData: cpuData,
-                        initialMemData: memData,
-                        globalLogs: globalLogs,
-                        currentUser: _currentUser!,
-                        userData: _userData,
-                        workspaceId: workspaceId,
-                      ),
-                    ),
-                  );
-                }
-              },
-              onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
-            ),
-          ),
-        );
-      },
+    return Scaffold(
+      // 1. TopBar를 appBar에 배치
+      appBar: TopBar(
+        currentUser: _currentUser!,
+        userData: _userData,
+        workspaces: _workspaces,
+        selectedWorkspaceId: _selectedWorkspaceId, // (신규 상태)
+        selectedWorkspaceName: _selectedWorkspaceName, // (신규 상태)
+        isLoading: _isLoadingWorkspaces,
+        onLogout: _onLogout,
+        goBackToWorkspaceSelection: _goBackToWorkspaceSelection, // (신규 함수)
+        onWorkspaceSelected: _onWorkspaceSelected, // (신규 함수)
+        onCreateWorkspace: () => _createNewWorkspace("", ""), // (임시, _showCreateWorkspaceDialog 호출로 변경 필요)
+      ),
+      // 2. body를 상태에 따라 교체
+      body: _selectedWorkspaceId == null
+          ? WorkspaceSelectionPage(
+        // (기존 코드에서 Scaffold와 상단 Row가 제거되어야 함)
+        currentUser: _currentUser!,
+        userData: _userData,
+        workspaces: _workspaces,
+        onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
+        onLogout: _onLogout, // (TopBar가 처리하지만, 만약을 위해 유지하거나 제거)
+        onWorkspaceSelected: _onWorkspaceSelected, // (Navigator.push 대신 신규 함수 사용)
+      )
+          : ShelfPage(
+        // 3. Navigator.push 대신 body에 직접 ShelfPage 렌더링
+        currentUser: _currentUser!,
+        userData: _userData,
+        workspaceId: _selectedWorkspaceId!,
+        workspaceName: _selectedWorkspaceName,
+        socket: socket!,
+        workspaces: _workspaces,
+        onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
+        onDeploy: () => _startNewDeployment(context, _selectedWorkspaceId!),
+        onPlantTap: (plant) {
+          // (기존 onPlantTap 로직)
+        },
+        onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
+      ),
     );
   }
 }
