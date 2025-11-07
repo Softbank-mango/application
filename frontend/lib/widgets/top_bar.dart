@@ -4,6 +4,7 @@ import '../models/user_data.dart';
 import '../models/workspace.dart';
 import 'profile_menu.dart';
 import 'workspace_switcher.dart';
+import '../pages/profile.dart';
 
 class TopBar extends StatelessWidget implements PreferredSizeWidget {
   // --- 상태 데이터 ---
@@ -19,6 +20,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback goBackToWorkspaceSelection;
   final Function(String, String) onWorkspaceSelected;
   final VoidCallback onCreateWorkspace;
+  final VoidCallback onShowProfile;
 
   // --- 임시 색상 (테마에서 가져오는 것이 좋음) ---
   final Color _textColor = const Color(0xFF333333);
@@ -36,6 +38,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
     required this.goBackToWorkspaceSelection,
     required this.onWorkspaceSelected,
     required this.onCreateWorkspace,
+    required this.onShowProfile,
   }) : super(key: key);
 
   @override
@@ -153,6 +156,7 @@ class TopBar extends StatelessWidget implements PreferredSizeWidget {
             currentUser: currentUser,
             userData: userData,
             onLogout: onLogout,
+            onShowProfile: onShowProfile,
           ),
 
         const SizedBox(width: 24), // 오른쪽 끝 패딩

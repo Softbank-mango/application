@@ -24,6 +24,8 @@ class DeploymentPage extends StatefulWidget {
   final UserData? userData;
   final String workspaceId;
 
+  final VoidCallback onShowProfile;
+
   const DeploymentPage(
       {Key? key,
         required this.plant,
@@ -35,6 +37,7 @@ class DeploymentPage extends StatefulWidget {
         required this.currentUser,
         this.userData,
         required this.workspaceId,
+        required this.onShowProfile,
       })
       : super(key: key);
 
@@ -540,6 +543,7 @@ class _DeploymentPageState extends State<DeploymentPage>
               currentUser: widget.currentUser,
               userData: widget.userData,
               onLogout: () => FirebaseAuth.instance.signOut(),
+              onShowProfile: widget.onShowProfile,
             ),
           ],
         ),
@@ -566,6 +570,7 @@ class _DeploymentPageState extends State<DeploymentPage>
             currentUser: widget.currentUser,
             userData: widget.userData,
             onLogout: () => FirebaseAuth.instance.signOut(),
+            onShowProfile: widget.onShowProfile,
           ),
         ],
         bottom: PreferredSize(

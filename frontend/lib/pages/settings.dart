@@ -10,11 +10,13 @@ import '../models/user_data.dart';
 class SettingsPage extends StatelessWidget {
   final User currentUser;
   final UserData? userData;
+  final VoidCallback onShowProfile;
 
   const SettingsPage({
     Key? key,
     required this.currentUser,
     this.userData,
+    required this.onShowProfile,
   }) : super(key: key);
 
   @override
@@ -30,6 +32,7 @@ class SettingsPage extends StatelessWidget {
             currentUser: currentUser,
             userData: userData,
             onLogout: () => FirebaseAuth.instance.signOut(),
+            onShowProfile: onShowProfile,
           )
         ],
       ),

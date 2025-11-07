@@ -23,11 +23,14 @@ import 'pages/loading.dart';
 import 'models/workspace.dart';
 import 'models/user_data.dart';
 import 'widgets/top_bar.dart';
+import 'pages/profile.dart';
 
 class AppCore extends StatefulWidget {
   @override
   _AppCoreState createState() => _AppCoreState();
 }
+
+enum AppPage { workspaceSelection, shelf, profile }
 
 class _AppCoreState extends State<AppCore> {
   IO.Socket? socket;
@@ -48,6 +51,8 @@ class _AppCoreState extends State<AppCore> {
 
   String? _selectedWorkspaceId;
   String _selectedWorkspaceName = "";
+
+  AppPage _currentPage = AppPage.workspaceSelection;
 
   // 로딩 상태를 하나로 통합
   bool _isLoading = true;
@@ -161,6 +166,13 @@ class _AppCoreState extends State<AppCore> {
     });
   }
   */
+  void _goBackToWorkspaceSelection() {
+    setState(() {
+      _selectedWorkspaceId = null;
+      _selectedWorkspaceName = "";
+      _currentPage = AppPage.workspaceSelection; // 상태 변경
+    });
+  }
 
 
   void _onNewPlant(dynamic data) {
@@ -200,6 +212,7 @@ class _AppCoreState extends State<AppCore> {
             currentUser: _currentUser!,
             userData: _userData,
             workspaceId: workspaceId,
+            onShowProfile: _showProfilePage,
           ),
         ),
       );
@@ -377,26 +390,102 @@ class _AppCoreState extends State<AppCore> {
     socket!.emit('slack-reaction', {'id': id, 'emoji': emoji});
   }
 
-  void _goBackToWorkspaceSelection() {
-    // (필요 시 'leave-workspace' 소켓 이벤트 emit)
-    // socket?.emit('leave-workspace', _selectedWorkspaceId);
-    setState(() {
-      _selectedWorkspaceId = null;
-      _selectedWorkspaceName = "";
-    });
-  }
-
-  // (신규) TopBar 또는 WorkspaceSelectionPage에서 워크스페이스를 선택했을 때 호출할 함수
+  // 워크스페이스 선택 시 호출 (Shelf 페이지로)
   void _onWorkspaceSelected(String workspaceId, String workspaceName) {
     socket!.emit('join-workspace', workspaceId);
     setState(() {
       _selectedWorkspaceId = workspaceId;
       _selectedWorkspaceName = workspaceName;
+      _currentPage = AppPage.shelf; // 상태 변경
     });
+  }
+
+  // 프로필 페이지로 이동
+  void _showProfilePage() {
+    setState(() {
+      _currentPage = AppPage.profile; // 상태 변경
+    });
+  }
+
+  // 프로필에서 대시보드(Shelf)로 복귀
+  void _showShelfPage() {
+    setState(() {
+      _currentPage = AppPage.shelf; // 상태 변경
+    });
+  }
+
+  void _showCreateWorkspaceDialog(BuildContext context) {
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController descriptionController = TextEditingController();
+    final _formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        title: Text(
+          '새 워크스페이스 생성',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  labelText: '워크스페이스 이름',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) return '이름을 입력해주세요.';
+                  return null;
+                },
+                autofocus: true,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: descriptionController,
+                decoration: InputDecoration(
+                  labelText: '설명',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                maxLines: 3,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return '설명을 입력해주세요.';
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (_formKey.currentState!.validate()) {
+                // (수정) onCreateWorkspace(..) 대신 _createNewWorkspace 직접 호출
+                _createNewWorkspace(nameController.text, descriptionController.text);
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('생성'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // 1. 로딩 중일 때 (기존과 동일)
     if (_isLoading || _isLoadingWorkspaces || socket == null) {
       return Scaffold(
         body: Center(
@@ -405,53 +494,111 @@ class _AppCoreState extends State<AppCore> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text("서버와 연결 중..."), // (로딩 텍스트 통일)
+              Text("서버와 연결 중..."),
             ],
           ),
         ),
       );
     }
 
+    // (L10n은 FAB 텍스트 등에 필요)
+    final l10n = AppLocalizations.of(context)!;
+
+    // 2. 로딩 완료 시 (공통 Scaffold)
     return Scaffold(
-      // 1. TopBar를 appBar에 배치
+      // --- (공통 TopBar) ---
       appBar: TopBar(
         currentUser: _currentUser!,
         userData: _userData,
         workspaces: _workspaces,
-        selectedWorkspaceId: _selectedWorkspaceId, // (신규 상태)
-        selectedWorkspaceName: _selectedWorkspaceName, // (신규 상태)
+        selectedWorkspaceId: _selectedWorkspaceId,
+        selectedWorkspaceName: _selectedWorkspaceName,
         isLoading: _isLoadingWorkspaces,
         onLogout: _onLogout,
-        goBackToWorkspaceSelection: _goBackToWorkspaceSelection, // (신규 함수)
-        onWorkspaceSelected: _onWorkspaceSelected, // (신규 함수)
-        onCreateWorkspace: () => _createNewWorkspace("", ""), // (임시, _showCreateWorkspaceDialog 호출로 변경 필요)
+        goBackToWorkspaceSelection: _goBackToWorkspaceSelection,
+        onWorkspaceSelected: _onWorkspaceSelected,
+        // (TopBar에서 "새 워크스페이스" 클릭 시 이 함수 호출)
+        onCreateWorkspace: () => _showCreateWorkspaceDialog(context),
+        // (ProfileMenuButton에서 "마이페이지" 클릭 시 이 함수 호출)
+        onShowProfile: _showProfilePage,
       ),
-      // 2. body를 상태에 따라 교체
-      body: _selectedWorkspaceId == null
-          ? WorkspaceSelectionPage(
-        // (기존 코드에서 Scaffold와 상단 Row가 제거되어야 함)
-        currentUser: _currentUser!,
-        userData: _userData,
-        workspaces: _workspaces,
-        onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
-        onLogout: _onLogout, // (TopBar가 처리하지만, 만약을 위해 유지하거나 제거)
-        onWorkspaceSelected: _onWorkspaceSelected, // (Navigator.push 대신 신규 함수 사용)
+      // --- (상태에 따라 바뀌는 body) ---
+      body: buildBody(),
+      // --- (Shelf 페이지일 때만 보이는 FAB) ---
+      floatingActionButton: _currentPage == AppPage.shelf
+          ? FloatingActionButton.extended(
+        onPressed: () => _startNewDeployment(context, _selectedWorkspaceId!),
+        label: Text(l10n.deployNewApp),
+        icon: Icon(Icons.add),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        shape: StadiumBorder(),
       )
-          : ShelfPage(
-        // 3. Navigator.push 대신 body에 직접 ShelfPage 렌더링
-        currentUser: _currentUser!,
-        userData: _userData,
-        workspaceId: _selectedWorkspaceId!,
-        workspaceName: _selectedWorkspaceName,
-        socket: socket!,
-        workspaces: _workspaces,
-        onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
-        onDeploy: () => _startNewDeployment(context, _selectedWorkspaceId!),
-        onPlantTap: (plant) {
-          // (기존 onPlantTap 로직)
-        },
-        onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
-      ),
+          : null, // 그 외 페이지(프로필 등)에서는 숨김
     );
+  }
+
+  // (신규) body 빌드 헬퍼 함수
+  Widget buildBody() {
+    switch (_currentPage) {
+      case AppPage.workspaceSelection:
+        return WorkspaceSelectionPage(
+          currentUser: _currentUser!,
+          userData: _userData,
+          workspaces: _workspaces,
+          // (수정) _showCreate... 대신 _createNewWorkspace 전달
+          onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
+          onLogout: _onLogout,
+          onWorkspaceSelected: _onWorkspaceSelected,
+        );
+      case AppPage.shelf:
+        return ShelfPage(
+          currentUser: _currentUser!,
+          userData: _userData,
+          workspaceId: _selectedWorkspaceId!,
+          workspaceName: _selectedWorkspaceName,
+          socket: socket!,
+          workspaces: _workspaces,
+          onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
+          onDeploy: () => _startNewDeployment(context, _selectedWorkspaceId!),
+          onPlantTap: (plant) {
+            // (기존 onPlantTap 로직 - 생략)
+            // ... (Navigator.push로 DeploymentPage 띄우기)
+            if (plant.status == 'SLEEPING') {
+              socket!.emit('start-deploy', {
+                'id': plant.id, 'isWakeUp': true, 'workspaceId': _selectedWorkspaceId!
+              });
+              Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => DeploymentLoadingPage(),
+                  settings: RouteSettings(name: '/loading')
+              ));
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => DeploymentPage(
+                    plant: plant,
+                    socket: socket!,
+                    initialMetrics: currentMetrics,
+                    initialCpuData: cpuData,
+                    initialMemData: memData,
+                    globalLogs: globalLogs,
+                    currentUser: _currentUser!,
+                    userData: _userData,
+                    workspaceId: _selectedWorkspaceId!,
+                    onShowProfile: _showProfilePage,
+                  ),
+                ),
+              );
+            }
+          },
+          onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
+        );
+      case AppPage.profile:
+        return ProfilePage(
+          // (ProfilePage에서 "대시보드로 돌아가기" 클릭 시 이 함수 호출)
+          onGoBackToDashboard: _showShelfPage,
+        );
+    }
   }
 }
