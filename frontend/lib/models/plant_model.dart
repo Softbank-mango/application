@@ -1,19 +1,17 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'logEntry_model.dart';
 
 class Plant {
-  // --- Firestore DB에서 오는 핵심 데이터 ---
   final String id;
   final String ownerUid;
   final String workspaceId;
   final String description;
 
-  // 이 값들은 서버 이벤트('plant-update')에 따라 변경되어야 함
   String plantType;
   String version;
   String status;
   List<String> reactions;
 
-  // --- 앱에서 관리하는 로컬 상태 ---
   List<LogEntry> logs = [];
   String aiInsight = 'AI 분석 대기 중...';
   String currentStatusMessage = '대기 중';
@@ -29,4 +27,18 @@ class Plant {
     required this.workspaceId,
     required this.reactions,
   });
+
+  // (★★★★★ 신규 ★★★★★: Socket.io가 보낸 Map용)
+  factory Plant.fromMap(Map<String, dynamic> data) {
+    return Plant(
+      id: data['id'],
+      plantType: data['plantType'] ?? 'pot',
+      version: data['version'] ?? 'N/A',
+      description: data['description'] ?? 'No description',
+      status: data['status'] ?? 'UNKNOWN',
+      ownerUid: data['ownerUid'] ?? '',
+      workspaceId: data['workspaceId'] ?? '',
+      reactions: List<String>.from(data['reactions'] ?? []),
+    );
+  }
 }
