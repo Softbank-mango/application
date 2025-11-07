@@ -1,93 +1,90 @@
+// pages/deployment.dart
+
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:lottie/lottie.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:percent_indicator/percent_indicator.dart';
 import 'package:intl/intl.dart';
-import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/plant_model.dart';
 import '../models/logEntry_model.dart';
-import '../widgets/profile_menu.dart';
-import '../l10n/app_localizations.dart';
 import '../models/user_data.dart';
 
-// --- (6) "배포 상세" 페이지 (작업대) ---
 class DeploymentPage extends StatefulWidget {
   final Plant plant;
   final IO.Socket socket;
-  final Map<String, double> initialMetrics;
-  final List<FlSpot> initialCpuData;
-  final List<FlSpot> initialMemData;
-  final List<LogEntry> globalLogs;
   final User currentUser;
   final UserData? userData;
   final String workspaceId;
 
-  final VoidCallback onShowProfile;
+  // (★★★★★) app_core의 body 교체를 위한 콜백
+  final VoidCallback onGoBackToDashboard;
+  final VoidCallback onShowSettings; // (우측 "설정" 버튼용)
 
-  const DeploymentPage(
-      {Key? key,
-        required this.plant,
-        required this.socket,
-        required this.initialMetrics,
-        required this.initialCpuData,
-        required this.initialMemData,
-        required this.globalLogs,
-        required this.currentUser,
-        this.userData,
-        required this.workspaceId,
-        required this.onShowProfile,
-      })
-      : super(key: key);
+  const DeploymentPage({
+    Key? key,
+    required this.plant,
+    required this.socket,
+    required this.currentUser,
+    this.userData,
+    required this.workspaceId,
+    required this.onGoBackToDashboard,
+    required this.onShowSettings,
+  }) : super(key: key);
 
   @override
   _DeploymentPageState createState() => _DeploymentPageState();
 }
 
-class _DeploymentPageState extends State<DeploymentPage>
-    with TickerProviderStateMixin {
+class _DeploymentPageState extends State<DeploymentPage> {
   late Plant plant;
-  Map<String, double> currentMetrics = {};
-  List<FlSpot> cpuData = [];
-  List<FlSpot> memData = [];
+
+  // (Stateful) 실시간 데이터
+  List<LogEntry> logs = [];
+  Map<String, double> currentMetrics = {'cpu': 0.0, 'mem': 0.0};
+  List<FlSpot> cpuData = [FlSpot(0, 5)];
+  List<FlSpot> memData = [FlSpot(0, 128)];
   double _timeCounter = 1.0;
 
-  late TabController _tabController;
   final ScrollController _logScrollController = ScrollController();
-  final TextEditingController _consoleController = TextEditingController();
-  final ScrollController _trafficScrollController = ScrollController();
+
+  // --- 이미지 기준 색상 정의 ---
+  static const Color _backgroundColor = Color(0xFFF9FAFB);
+  static const Color _cardColor = Colors.white;
+  static const Color _textColor = Color(0xFF111827);
+  static const Color _subTextColor = Color(0xFF6B7280);
+  static const Color _borderColor = Color(0xFFE5E7EB);
+  static const Color _primaryColor = Color(0xFF678AFB);
+  static const Color _successColor = Color(0xFF00B894); // (정상)
+  static const Color _successBgColor = Color(0xFFF0FDF4); // (정상 배경)
+  static const Color _memColor = Color(0xFF34D399); // (메모리 바)
 
   @override
   void initState() {
     super.initState();
     plant = widget.plant;
-    currentMetrics = widget.initialMetrics;
-    cpuData = List.from(widget.initialCpuData);
-    memData = List.from(widget.initialMemData);
-    _timeCounter = (cpuData.lastOrNull?.x ?? 0.0) + 1.0;
-
-    _tabController = TabController(length: 5, vsync: this);
+    // (이 페이지가 로드될 때 로그/메트릭을 새로 요청해야 할 수 있음)
+    // widget.socket.emit('get-logs-for-plant', plant.id);
 
     widget.socket.on('status-update', _onStatusUpdate);
     widget.socket.on('new-log', _onNewLog);
-    widget.socket.on('plant-complete', _onPlantComplete);
     widget.socket.on('metrics-update', _onMetricsUpdate);
+
+    // (임시 데이터 - 차트 모양 확인용)
+    cpuData = _getDummyChartData(40, 75);
+    memData = _getDummyChartData(30, 55);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _logScrollController.dispose();
-    _consoleController.dispose();
-    _trafficScrollController.dispose();
     widget.socket.off('status-update', _onStatusUpdate);
     widget.socket.off('new-log', _onNewLog);
-    widget.socket.off('plant-complete', _onPlantComplete);
     widget.socket.off('metrics-update', _onMetricsUpdate);
     super.dispose();
   }
 
+  // --- 소켓 리스너 (기존 deployment.dart와 유사) ---
   void _onStatusUpdate(dynamic data) {
     if (!mounted || data['id'] != plant.id) return;
     setState(() {
@@ -97,35 +94,27 @@ class _DeploymentPageState extends State<DeploymentPage>
   }
 
   void _onNewLog(dynamic data) {
-    if (!mounted) return;
+    if (!mounted || data['id'] != plant.id) return;
     final log = LogEntry(
         time: DateTime.parse(data['log']['time']),
         message: data['log']['message'],
         status: data['log']['status']);
-    if (data['id'] == plant.id) {
-      setState(() {
-        plant.logs.add(log);
-        if (log.status == 'AI_INSIGHT') plant.aiInsight = log.message;
-      });
-      _scrollToBottom(_logScrollController);
-    }
-  }
-
-  void _onPlantComplete(dynamic data) {
-    if (!mounted || data['id'] != plant.id) return;
     setState(() {
-      plant.status = data['status'];
-      plant.plantType = data['plant'];
-      plant.name = data['version'];
+      logs.add(log);
+      if (logs.length > 100) logs.removeAt(0);
+      if (log.status == 'AI_INSIGHT') plant.aiInsight = log.message;
     });
+    _scrollToBottom(_logScrollController);
   }
 
   void _onMetricsUpdate(dynamic data) {
     if (!mounted) return;
     setState(() {
-      double cpu = data['cpu'].toDouble(); double mem = data['mem'].toDouble();
+      double cpu = data['cpu'].toDouble();
+      double mem = data['mem'].toDouble();
       currentMetrics = {'cpu': cpu, 'mem': mem};
-      cpuData.add(FlSpot(_timeCounter, cpu)); memData.add(FlSpot(_timeCounter, mem));
+      cpuData.add(FlSpot(_timeCounter, cpu));
+      memData.add(FlSpot(_timeCounter, mem));
       if (cpuData.length > 20) cpuData.removeAt(0);
       if (memData.length > 20) memData.removeAt(0);
       _timeCounter += 1.0;
@@ -141,265 +130,518 @@ class _DeploymentPageState extends State<DeploymentPage>
     });
   }
 
-  // (신규) "깨우기" 버튼 로직
-  void _wakeUpApp() {
-    setState(() {
-      plant.logs = [];
-      plant.aiInsight = 'AI 분석 대기 중...';
-      cpuData = [FlSpot(0, 5)]; memData = [FlSpot(0, 128)]; _timeCounter = 1.0;
-    });
-    // 'start-deploy'를 호출하되, "깨우기" 플래그를 전송
-    widget.socket.emit('start-deploy', {
-      'id': plant.id, // (신규) 겨울잠은 "id"가 필요
-      'name': plant.name,
-      'githubUrl': plant.githubUrl,
-      'isWakeUp': true, // (신규)
-      'workspaceId': widget.workspaceId
-    });
-  }
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: _backgroundColor,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 48.0, vertical: 24.0),
+        child: Column(
+          children: [
+            // 1. 페이지 헤더 (뒤로가기 버튼)
+            _buildHeader(context),
+            const SizedBox(height: 24),
 
-  // --- (1) 메인 상단: 나무 애니메이션 ---
-  Widget _buildAnimation() {
-    String lottieFile;
-    switch (plant.status) {
-      case 'linting': case 'ROLLBACK': lottieFile = 'assets/seed.json'; break;
-      case 'testing': lottieFile = 'assets/sprout.json'; break;
-      case 'building': case 'deploying': case 'routing': case 'CLEANUP':
-      lottieFile = 'assets/growing.json'; break;
-      case 'done': case 'HEALTHY': lottieFile = 'assets/done_tree.json'; break;
-      case 'failed': case 'FAILED': lottieFile = 'assets/wilted_fly.json'; break;
-      case 'SLEEPING': lottieFile = 'assets/pot_sleeping.json'; break; // (신규)
-      default: lottieFile = 'assets/pot.json';
-    }
-    return Lottie.asset(lottieFile, width: 250, height: 250);
-  }
+            // 상단 Row (앱 정보 + 배포 정보)
+            // IntrinsicHeight를 사용해 두 카드의 높이를 동일하게 맞춤
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1-1. 왼쪽 앱 정보 카드 (70%)
+                  Expanded(
+                    flex: 7,
+                    child: _buildAppInfoCardWithUsage(context),
+                  ),
+                  const SizedBox(width: 24),
 
-  // --- (이하 모든 _build... 탭 위젯은 이전 버전과 100% 동일 ---
-  // ... (_buildConsoleArea, _buildMetricsArea, _buildStatusArea, _buildGlobalTrafficArea, _buildEnvArea)
-  // ... (LineChart 헬퍼)
-
-  // (이전 코드와 동일 - _buildConsoleArea)
-  Widget _buildConsoleArea() {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-    return Container( color: theme.colorScheme.surface, child: Column( children: [
-      Expanded( child: Padding( padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-        child: ListView.builder(
-          controller: _logScrollController,
-          itemCount: plant.logs.length,
-          itemBuilder: (context, index) {
-            final log = plant.logs[index];
-            Color logColor; String prefix = '[${log.status}]'; String message = log.message;
-            switch(log.status) {
-              case 'COMMAND': logColor = theme.textTheme.bodyMedium!.color!; prefix = '\$'; message = ' ${log.message}'; break;
-              case 'CONSOLE': logColor = theme.textTheme.bodyMedium!.color!.withOpacity(0.8); prefix = ''; break;
-              case 'CONSOLE_ERROR': logColor = Colors.red[700]!; prefix = ''; break;
-              case 'FAILED': logColor = Colors.red[700]!; prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:'; break;
-              case 'DONE': logColor = Colors.blue[800]!; prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:'; break;
-              case 'SYSTEM': logColor = theme.hintColor; prefix = '[SYSTEM]'; break;
-              case 'TRAFFIC_HIT': logColor = Colors.lightBlue[300]!; prefix = '[TRAFFIC]'; break;
-              case 'AI_INSIGHT': logColor = Colors.purple[700]!; prefix = '[AI]'; break;
-              case 'ROLLBACK': logColor = Colors.orange[800]!; prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:'; break;
-              default: logColor = Colors.green[800]!; prefix = '[${log.status}] ${DateFormat('HH:mm:ss').format(log.time.toLocal())}:';
-            }
-            return Text('$prefix $message', style: TextStyle(color: logColor, fontFamily: 'monospace', fontSize: 13));
-          },
-        ),
-      )),
-      Container(
-          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          color: theme.scaffoldBackgroundColor,
-          child: Row( children: [
-            Text('>', style: TextStyle(color: Colors.green[800], fontFamily: 'monospace', fontSize: 14)), SizedBox(width: 8),
-            Expanded( child: TextField(
-              controller: _consoleController, style: TextStyle(color: theme.textTheme.bodyMedium!.color, fontFamily: 'monospace', fontSize: 14),
-              decoration: InputDecoration(
-                  hintText: l10n.consoleHint,
-                  hintStyle: TextStyle(color: theme.hintColor, fontFamily: 'monospace'),
-                  border: InputBorder.none, isDense: true
+                  // 2. _buildSidebar 대신 _buildDeploymentInfoCard 직접 호출
+                  Expanded(
+                    flex: 3,
+                    child: _buildDeploymentInfoCard(context),
+                  ),
+                ],
               ),
-              onSubmitted: (command) {
-                if (command.isEmpty) return;
-                if (command.toLowerCase() == 'clear') { setState(() => plant.logs = []); }
-                else widget.socket.emit('run-command', command);
-                _consoleController.clear();
-              },
-            )),
-          ])),
-    ]));
-  }
-
-  // (이전 코드와 동일 - _buildMetricsArea)
-  Widget _buildMetricsArea() {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    return Container(
-        color: theme.scaffoldBackgroundColor,
-        padding: EdgeInsets.all(16.0),
-        child: SingleChildScrollView( child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.vitalsTitle, style: theme.textTheme.titleLarge),
-            SizedBox(height: 20),
-            Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(l10n.vitalsCPU, style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.bold)),
-                      SizedBox(height: 16),
-                      Container(height: 150, child: _buildLineChart(cpuData, Colors.blue)),
-                    ],
-                  ),
-                )
             ),
-            SizedBox(height: 16),
-            Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(l10n.vitalsMemory, style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.bold)),
-                      SizedBox(height: 16),
-                      Container(height: 150, child: _buildLineChart(memData, Colors.green)),
-                    ],
+            const SizedBox(height: 24),
+
+            // 2. 하단 Row (메트릭 + 로그)
+            // IntrinsicHeight를 사용해 두 카드의 높이를 동일하게 맞춤
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch, // (자식들이 높이를 꽉 채우게 함)
+                children: [
+                  // 2-1. 실시간 메트릭
+                  Expanded(
+                    flex: 7,
+                    child: _buildMetricsChart(), // (차트가 꽉 차도록 수정됨)
                   ),
-                )
+                  const SizedBox(width: 24),
+                  // 2-2. 실시간 로그
+                  Expanded(
+                    flex: 3,
+                    child: _buildLogs(), // (이 카드의 높이를 기준으로 함)
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 24),
+
+            // 3. AI 인사이트 (Full Width)
+            _buildAiInsight(),
           ],
-        )));
-  }
-  LineChart _buildLineChart(List<FlSpot> data, Color color) {
-    final theme = Theme.of(context);
-    return LineChart( LineChartData(
-      gridData: FlGridData(show: true, drawVerticalLine: true, getDrawingHorizontalLine: (v) => FlLine(color: theme.dividerColor, strokeWidth: 0.5)),
-      titlesData: FlTitlesData(show: false),
-      borderData: FlBorderData(show: false),
-      lineBarsData: [ LineChartBarData(
-        spots: data, isCurved: true, color: color, barWidth: 3,
-        dotData: FlDotData(show: false), belowBarData: BarAreaData(show: true, color: color.withOpacity(0.2)),
-      )],
-    ));
+        ),
+      ),
+    );
   }
 
-  // (이전 코드와 동일 - _buildStatusArea)
-  Widget _buildStatusArea() {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
+  // --- 1. 페이지 헤더 (뒤로가기) ---
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      children: [
+        TextButton.icon(
+          onPressed: widget.onGoBackToDashboard, // (app_core 콜백)
+          icon: const Icon(Icons.arrow_back, size: 16, color: _primaryColor),
+          label: const Text("대시보드로 돌아가기"),
+          style: TextButton.styleFrom(
+            foregroundColor: _primaryColor,
+          ),
+        ),
+      ],
+    );
+  }
 
-    String statusText; Color statusColor;
-    bool isDeploying = plant.status.isNotEmpty && plant.status != 'waiting' && plant.status != 'done' && plant.status != 'FAILED' && plant.status != 'HEALTHY';
-    bool isHealthy = plant.status == 'HEALTHY' || plant.status == 'done';
-
-    if (isDeploying) { statusText = 'Growing'; statusColor = Colors.orange[700]!; }
-    else if (plant.status == 'FAILED') { statusText = 'Wilted'; statusColor = Colors.red[700]!; }
-    else { statusText = 'Healthy'; statusColor = Colors.green[700]!; }
-
-    return Container(
-        color: theme.scaffoldBackgroundColor,
-        padding: EdgeInsets.all(20.0),
-        child: SingleChildScrollView(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildAppInfoCardWithUsage(BuildContext context) {
+    return _buildBaseCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. 앱 정보 (Row)
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Color(0xFFF0F4FF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.desktop_windows, color: _primaryColor, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    plant.name,
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _textColor,
+                        fontSize: 18),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(plant.githubUrl, style: TextStyle(color: _subTextColor)),
+                  const SizedBox(height: 4),
+                  Text("https://frontend-app.deplight.com", // (임시 하드코딩)
+                      style: TextStyle(color: _primaryColor, fontSize: 13)),
+                ],
+              ),
+              const Spacer(),
+              // 상태 칩
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _successBgColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text("${l10n.statusTitle} (${plant.name})", style: theme.textTheme.titleLarge),
-                    SizedBox(height: 20), Row( children: [
-                      Icon(Icons.circle, color: statusColor, size: 14), SizedBox(width: 8),
-                      Text(statusText, style: TextStyle(fontSize: 16, color: statusColor, fontWeight: FontWeight.bold)),
-                    ]),
-                    if (isHealthy && !isDeploying)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16.0),
-                        child: TextButton.icon(
-                          icon: Icon(Icons.history, color: Colors.red[700]),
-                          label: Text(l10n.rollbackNow, style: TextStyle(color: Colors.red[700])),
-                          style: TextButton.styleFrom( side: BorderSide(color: Colors.red[200]!) ),
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(l10n.rollbackConfirmTitle),
-                                content: Text(l10n.rollbackConfirmMessage),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      widget.socket.emit('start-rollback', { 'id': plant.id });
-                                      _tabController.animateTo(0);
-                                    },
-                                    child: Text(l10n.rollbackAction, style: TextStyle(color: Colors.red[700])),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    SizedBox(height: 20), Divider(color: theme.dividerColor),
-                    SizedBox(height: 20), Text(l10n.statusResources, style: theme.textTheme.titleMedium),
-                    SizedBox(height: 16),
-                    Text('CPU: ${currentMetrics['cpu']!.toStringAsFixed(1)} %', style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: Colors.blue[700])),
-                    SizedBox(height: 8),
-                    Text('MEM: ${currentMetrics['mem']!.toStringAsFixed(1)} MB', style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: Colors.green[700])),
+                    Icon(Icons.check_circle, size: 14, color: _successColor),
+                    SizedBox(width: 4),
+                    Text("정상",
+                        style: TextStyle(
+                            color: _successColor,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12)),
                   ],
                 ),
               ),
-            ),
-            SizedBox(height: 20),
-            Text(l10n.statusAITitle, style: theme.textTheme.titleLarge?.copyWith(color: Colors.purple[700])),
-            SizedBox(height: 10),
-            Container(
-              padding: EdgeInsets.all(16), width: double.infinity,
-              decoration: BoxDecoration(color: Colors.purple[50], borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.purple[200]!)),
-              child: Text(plant.aiInsight, style: TextStyle(fontSize: 14, color: Colors.purple[900], height: 1.5)),
-            ),
-          ],
-        )));
+              const SizedBox(width: 8),
+              // 리프레시 버튼
+              IconButton(
+                icon: Icon(Icons.refresh, color: _subTextColor),
+                onPressed: () { /* TODO: 데이터 리프레시 */ },
+              ),
+            ],
+          ),
+          const SizedBox(height: 24), // (섹션 구분)
+
+          // (★★★★★ 2. CPU/Mem 바 (Row)가 카드 안으로 이동 ★★★★★)
+          Row(
+            children: [
+              Expanded(
+                child: _buildProgressBar(
+                  "CPU 사용량",
+                  plant.cpuUsage, // (0.0 ~ 1.0)
+                  _primaryColor,
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: _buildProgressBar(
+                  "메모리 사용량",
+                  plant.memUsage, // (0.0 ~ 1.0)
+                  _memColor,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
-  // (이전 코드와 동일 - _buildGlobalTrafficArea)
-  Widget _buildGlobalTrafficArea() {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-    final trafficLogs = widget.globalLogs.where((log) => log.status == 'TRAFFIC_HIT').toList();
+  // --- (★★★★★ 3. _buildSidebar에서 로그 카드 제거 ★★★★★) ---
+  Widget _buildSidebar(BuildContext context) {
+    return Column(
+      children: [
+        // 배포 정보
+        _buildDeploymentInfoCard(context),
+        const SizedBox(height: 16),
+        // 재배포 버튼
+        ElevatedButton(
+          onPressed: () { /* TODO: 재배포 로직 */ },
+          child: Text("재배포"),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 44),
+            backgroundColor: _primaryColor,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // 설정 버튼
+        OutlinedButton(
+          onPressed: widget.onShowSettings, // (app_core 콜백)
+          child: Text("설정", style: TextStyle(color: _textColor)),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 44),
+            side: BorderSide(color: _borderColor),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        // (로그 카드가 여기에서 제거됨)
+      ],
+    );
+  }
 
+  // (공통) 카드 스타일
+  Widget _buildBaseCard({required Widget child, EdgeInsets? padding}) {
     return Container(
-      color: theme.scaffoldBackgroundColor,
-      child: Column(
+      width: double.infinity,
+      // height: double.infinity,
+      padding: padding ?? const EdgeInsets.all(24.0),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _borderColor),
+      ),
+      child: child,
+    );
+  }
+
+  // (공통) 카드 헤더
+  Widget _buildCardHeader(String title, {Widget? action}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: _textColor, fontSize: 16),
+        ),
+        if (action != null) action,
+      ],
+    );
+  }
+
+  // (본문 1) 앱 정보
+  Widget _buildAppInfoCard() {
+    return _buildBaseCard(
+      child: Row(
         children: [
           Container(
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-                color: theme.cardColor,
-                border: Border(bottom: BorderSide(color: theme.dividerColor, width: 1))
+              color: Color(0xFFF0F4FF),
+              borderRadius: BorderRadius.circular(8),
             ),
-            padding: EdgeInsets.all(16),
-            child: Row(children: [
-              Icon(Icons.public, color: theme.colorScheme.primary, size: 30),
-              SizedBox(width: 16),
-              Text(l10n.trafficTitle, style: theme.textTheme.titleLarge),
-            ]),
+            child: Icon(Icons.desktop_windows, color: _primaryColor, size: 28),
           ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                plant.name,
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: _textColor,
+                    fontSize: 18),
+              ),
+              const SizedBox(height: 4),
+              Text(plant.githubUrl, style: TextStyle(color: _subTextColor)),
+              const SizedBox(height: 4),
+              Text("https://frontend-app.deplight.com", // (임시 하드코딩)
+                  style: TextStyle(color: _primaryColor, fontSize: 13)),
+            ],
+          ),
+          const Spacer(),
+          // 상태 칩
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: _successBgColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, size: 14, color: _successColor),
+                SizedBox(width: 4),
+                Text("정상",
+                    style: TextStyle(
+                        color: _successColor,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 리프레시 버튼
+          IconButton(
+            icon: Icon(Icons.refresh, color: _subTextColor),
+            onPressed: () { /* TODO: 데이터 리프레시 */ },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // (본문 2) CPU/메모리 사용량
+  Widget _buildUsageBars() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildBaseCard(
+            padding: EdgeInsets.all(20),
+            child: _buildProgressBar(
+              "CPU 사용량",
+              plant.cpuUsage, // (0.0 ~ 1.0)
+              _primaryColor,
+            ),
+          ),
+        ),
+        const SizedBox(width: 24),
+        Expanded(
+          child: _buildBaseCard(
+            padding: EdgeInsets.all(20),
+            child: _buildProgressBar(
+              "메모리 사용량",
+              plant.memUsage, // (0.0 ~ 1.0)
+              _memColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // (Helper) 프로그레스 바
+  Widget _buildProgressBar(String label, double percent, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    color: _textColor,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14)),
+            Text(
+              "${(percent * 100).toInt()}%",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: _textColor,
+                  fontSize: 16),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        LinearPercentIndicator(
+          percent: percent,
+          lineHeight: 10,
+          backgroundColor: color.withOpacity(0.1),
+          progressColor: color,
+          barRadius: Radius.circular(5),
+          padding: EdgeInsets.zero,
+        ),
+      ],
+    );
+  }
+
+  // (본문 3) 실시간 메트릭
+  Widget _buildMetricsChart() {
+    return _buildBaseCard(
+      child: Column(
+        children: [
+          _buildCardHeader("실시간 메트릭"),
+          const SizedBox(height: 32),
+          // (★★★★★) 고정 높이 제거, Expanded로 변경
           Expanded(
+            child: LineChart(
+              LineChartData(
+                lineTouchData: LineTouchData(enabled: false),
+                clipData: FlClipData.all(),
+
+                // (이하 차트 설정은 이전과 동일)
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(color: _borderColor, strokeWidth: 1);
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      interval: 20, // 0, 20, 40, 60, 80
+                      getTitlesWidget: (value, meta) {
+                        if (value % 20 == 0) {
+                          return Text(
+                            value.toInt().toString(),
+                            style: TextStyle(color: _subTextColor, fontSize: 12),
+                            textAlign: TextAlign.right,
+                          );
+                        }
+                        return Container();
+                      },
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 22,
+                      interval: 4, // 4시간 단위
+                      getTitlesWidget: (value, meta) {
+                        String text;
+                        switch (value.toInt()) {
+                          case 0: text = '00:00'; break;
+                          case 4: text = '04:00'; break;
+                          case 8: text = '08:00'; break;
+                          case 12: text = '12:00'; break;
+                          case 16: text = '16:00'; break;
+                          case 20: text = '20:00'; break;
+                          case 24: text = '24:00'; break;
+                          default: return Container();
+                        }
+                        return Text(
+                          text,
+                          style: TextStyle(color: _subTextColor, fontSize: 12),
+                        );
+                      },
+                    ),
+                  ),
+                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border(
+                    bottom: BorderSide(color: _borderColor, width: 1),
+                  ),
+                ),
+                minX: 0,
+                maxX: 24,
+                minY: 0,
+                maxY: 80, // (이미지와 동일하게 80)
+                lineBarsData: [
+                  _buildLineChartData(cpuData, _primaryColor),
+                  _buildLineChartData(memData, _memColor),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // (Helper) 라인 차트 데이터
+  LineChartBarData _buildLineChartData(List<FlSpot> data, Color color) {
+    return LineChartBarData(
+      spots: data,
+      isCurved: true,
+      color: color,
+      barWidth: 3,
+      dotData: FlDotData(show: false),
+      belowBarData: BarAreaData(show: false),
+    );
+  }
+
+  // (본문 4) 실시간 로그
+  Widget _buildLogs() {
+    // (★★★★★) 예시 로그 데이터를 여기로 이동
+    final logMessages = [
+      "[2024-01-01 10:00:01] 팜 시작됨",
+      "[2024-01-01 10:00:02] 데이터베이스 연결 성공",
+      "[2024-01-01 10:00:10] 404 포트 3000에서 대기중",
+      "[2024-01-01 10:00:15] GET /api/users - 200 OK",
+      "[2024-01-01 10:00:32] POST /api/auth/login - 200 OK",
+      "[2024-01-01 10:01:05] GET /api/dashboard - 200 OK",
+      "[2024-01-01 10:01:23] WebSocket 연결 설정됨",
+      "[2024-01-01 10:02:01] 메모리 사용량: 62%",
+      "[2024-01-01 10:02:15] CPU 사용량: 45%",
+    ];
+
+    return _buildBaseCard(
+      child: Column(
+        children: [
+          _buildCardHeader("실시간 로그", action: Icon(Icons.download_outlined, color: _subTextColor)),
+          const SizedBox(height: 16),
+          // (★★★★★) 이 Container의 높이가 메트릭 차트의 높이를 결정함
+          Container(
+            height: 310,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _textColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: ListView.builder(
-              controller: _trafficScrollController,
-              padding: EdgeInsets.all(16),
-              itemCount: trafficLogs.length,
+              controller: _logScrollController,
+              // (★★★★★) itemCount 및 itemBuilder 수정
+              itemCount: logMessages.length,
               itemBuilder: (context, index) {
-                final log = trafficLogs[trafficLogs.length - 1 - index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0),
-                  child: Text(
-                    '[${DateFormat('HH:mm:ss').format(log.time.toLocal())}] ${log.message}',
-                    style: TextStyle(color: theme.textTheme.bodySmall?.color, fontFamily: 'monospace', fontSize: 13),
+                final logText = logMessages[index];
+
+                // (실제 데이터 사용 시)
+                // final log = logs[index];
+                // final logText = '[${DateFormat('HH:mm:ss').format(log.time.toLocal())}] ${log.message}';
+
+                return Text(
+                  logText,
+                  style: TextStyle(
+                    color: _successColor,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 );
               },
@@ -410,233 +652,111 @@ class _DeploymentPageState extends State<DeploymentPage>
     );
   }
 
-  // (이전 코드와 동일 - _buildEnvArea)
-  Widget _buildEnvArea() {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-    final envVars = {
-      'API_KEY': '********** (숨김)', 'DB_HOST': 'prod.rds.aws.com', 'DB_USER': 'postgres',
-      'DB_PASS': '********** (숨김)', 'ENABLE_FEATURE_X': 'true',
-    };
-
+  // (본문 5) AI 인사이트
+  Widget _buildAiInsight() {
     return Container(
-      color: theme.scaffoldBackgroundColor,
-      padding: EdgeInsets.all(20.0),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20.0),
+      decoration: BoxDecoration(
+        color: Color(0xFFF5F3FF), // (연한 보라색 배경)
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Color(0xFFEDE9FE)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.support_agent, color: Color(0xFF8B5CF6)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "AI 인사이트",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF5B21B6),
+                      fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  plant.aiInsight,
+                  style: TextStyle(color: Color(0xFF6D28D9), height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // (사이드바 1) 배포 정보
+  Widget _buildDeploymentInfoCard(BuildContext context) {
+    return _buildBaseCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l10n.envTitle, style: theme.textTheme.titleLarge),
-          SizedBox(height: 10),
-          Text(l10n.envSubtitle, style: theme.textTheme.bodySmall),
-          SizedBox(height: 16),
-          Expanded(
-            child: Card(
-              color: theme.cardColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8.0),
-                side: BorderSide(color: theme.dividerColor, width: 1),
-              ),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: envVars.length,
-                itemBuilder: (context, index) {
-                  final key = envVars.keys.elementAt(index);
-                  final value = envVars.values.elementAt(index);
-                  return ListTile(
-                    title: Text(key, style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-                    subtitle: Text(value, style: TextStyle(fontFamily: 'monospace', color: Colors.green[800])),
-                    trailing: Icon(Icons.copy, size: 18, color: theme.hintColor),
-                  );
-                },
-              ),
+          _buildCardHeader("배포 정보"),
+          const SizedBox(height: 16),
+          _buildInfoRow("마지막 배포", "2시간 전"),
+          _buildInfoRow("배포 환경", "Production"),
+          _buildInfoRow("인스턴스", "2개"),
+          _buildInfoRow("리전", "Asia-Northeast1"),
+
+          // (★★★★★) Spacer가 버튼들을 하단으로 밀어냄
+          const Spacer(),
+
+          // (★★★★★) 버튼들이 카드로 이동
+          ElevatedButton(
+            onPressed: () { /* TODO: 재배포 로직 */ },
+            child: Text("재배포"),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 44),
+              backgroundColor: _primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
-          SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              icon: Icon(Icons.save),
-              label: Text(l10n.envSaveAndRedeploy),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-                padding: EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                setState(() {
-                  plant.logs = [];
-                  plant.aiInsight = 'AI 분석 대기 중...';
-                  cpuData = [FlSpot(0, 5)]; memData = [FlSpot(0, 128)]; _timeCounter = 1.0;
-                  _tabController.animateTo(0);
-                });
-                widget.socket.emit('start-deploy', {
-                  'name': '${plant.name} (Env Update)',
-                  'githubUrl': plant.githubUrl, // 기존 githubUrl 사용
-                  'id': plant.id, // (Env 업데이트는 기존 앱 대상이므로 id 포함)
-                  'isWakeUp': true,
-                  'workspaceId': widget.workspaceId
-                });
-              },
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: widget.onShowSettings, // (app_core 콜백)
+            child: Text("설정", style: TextStyle(color: _textColor)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 44),
+              side: BorderSide(color: _borderColor),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-          )
+          ),
         ],
       ),
     );
   }
 
-  // "겨울잠" 상태일 때 보여줄 UI ---
-  Widget _buildSleepingView() {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    return Container(
-      color: theme.scaffoldBackgroundColor,
-      padding: EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Lottie.asset('assets/pot_sleeping.json', width: 200, height: 200),
-            SizedBox(height: 24),
-            Text(
-              l10n.wakeUpTitle,
-              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 12),
-            Text(
-              l10n.wakeUpMessage,
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 32),
-            ElevatedButton.icon(
-              icon: Icon(Icons.wb_sunny_outlined, color: Colors.white),
-              label: Text(l10n.wakeUpButton, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
-                padding: EdgeInsets.symmetric(horizontal: 40, vertical: 18),
-                shape: StadiumBorder(),
-              ),
-              onPressed: _wakeUpApp, // (신규) 깨우기 함수 호출
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    // (신규) "겨울잠" 상태 분기
-    if (plant.status == 'SLEEPING') {
-      return Scaffold(
-        appBar: AppBar(
-          title: Text('${l10n.workbenchTitle} ${plant.name}'),
-          actions: [
-            ProfileMenuButton(
-              currentUser: widget.currentUser,
-              userData: widget.userData,
-              onLogout: () => FirebaseAuth.instance.signOut(),
-              onShowProfile: widget.onShowProfile,
-            ),
-          ],
-        ),
-        body: _buildSleepingView(), // <-- "겨울잠" UI 표시
-      );
-    }
-
-    // (이하) "활성" 상태 UI (기존 5-Tab)
-    Color statusBarColor;
-    Color statusTextColor;
-    if (plant.status == 'FAILED') {
-      statusBarColor = Colors.red[50]!;
-      statusTextColor = Colors.red[800]!;
-    } else {
-      statusBarColor = Colors.green[50]!;
-      statusTextColor = Colors.green[800]!;
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${l10n.workbenchTitle} ${plant.name}'),
-        actions: [
-          ProfileMenuButton(
-            currentUser: widget.currentUser,
-            userData: widget.userData,
-            onLogout: () => FirebaseAuth.instance.signOut(),
-            onShowProfile: widget.onShowProfile,
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(40.0),
-          child: Container(
-            padding: EdgeInsets.all(8.0),
-            color: statusBarColor,
-            alignment: Alignment.center,
-            child: Text(
-              plant.currentStatusMessage,
-              style: TextStyle(color: statusTextColor, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ),
-      ),
-      body: Column(
+  // (Helper) 정보 행 (Key-Value)
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            color: theme.cardColor,
-            padding: EdgeInsets.all(10),
-            height: 150,
-            child: _buildAnimation(),
-          ),
-          Expanded(
-            child: DefaultTabController(
-              length: 5,
-              child: Column(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                        color: theme.scaffoldBackgroundColor,
-                        border: Border(bottom: BorderSide(color: theme.dividerColor, width: 1))
-                    ),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorColor: theme.colorScheme.primary,
-                      labelColor: theme.colorScheme.primary,
-                      unselectedLabelColor: theme.hintColor,
-                      isScrollable: true,
-                      tabs: [
-                        Tab(icon: Icon(Icons.terminal), text: l10n.tabConsole),
-                        Tab(icon: Icon(Icons.bar_chart), text: l10n.tabVitals),
-                        Tab(icon: Icon(Icons.support_agent), text: l10n.tabAIGardener),
-                        Tab(icon: Icon(Icons.public), text: l10n.tabGlobalTraffic),
-                        Tab(icon: Icon(Icons.vpn_key), text: l10n.tabEnvironment),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildConsoleArea(),
-                        _buildMetricsArea(),
-                        _buildStatusArea(),
-                        _buildGlobalTrafficArea(),
-                        _buildEnvArea(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Text(label, style: TextStyle(color: _subTextColor)),
+          Text(value, style: TextStyle(fontWeight: FontWeight.w500, color: _textColor)),
         ],
       ),
     );
+  }
+
+  // (임시) 차트 더미 데이터
+  List<FlSpot> _getDummyChartData(double min, double max) {
+    return [
+      FlSpot(0, (min + max) / 2),
+      FlSpot(4, min),
+      FlSpot(8, min + 5),
+      FlSpot(12, max),
+      FlSpot(16, max - 10),
+      FlSpot(20, min + 15),
+      FlSpot(24, max - 20),
+    ];
   }
 }
