@@ -20,6 +20,8 @@ import 'pages/workspace_selection.dart';
 import 'pages/app_list.dart';
 import 'pages/deployment.dart';
 import 'pages/loading.dart';
+import 'models/workspace.dart';
+import 'models/user_data.dart';
 
 class AppCore extends StatefulWidget {
   @override
@@ -282,9 +284,16 @@ class _AppCoreState extends State<AppCore> {
     socket?.emit('get-my-workspaces');
   }
 
-  void _createNewWorkspace(String name) {
-    if (socket == null || name.isEmpty) return;
-    socket!.emit('create-workspace', {'name': name});
+  void _createNewWorkspace(String name, String description) {
+    if (socket == null || name.isEmpty || description.isEmpty) return;
+    socket!.emit('create-workspace', {
+      'name': name,
+      'description': description
+    });
+  }
+
+  void _onLogout() {
+    FirebaseAuth.instance.signOut();
   }
 
   void _startNewDeployment(BuildContext context, String workspaceId) {
@@ -373,12 +382,11 @@ class _AppCoreState extends State<AppCore> {
     }
 
     return WorkspaceSelectionPage(
-      socket: socket!,
       currentUser: _currentUser!,
       userData: _userData,
       workspaces: _workspaces,
-      onCreateWorkspace: (name) => _createNewWorkspace(name),
-
+      onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
+      onLogout: _onLogout,
 
       onWorkspaceSelected: (workspaceId, workspaceName) {
         socket!.emit('join-workspace', workspaceId);
@@ -393,7 +401,7 @@ class _AppCoreState extends State<AppCore> {
               workspaceName: workspaceName,
               socket: socket!, // socket 전달
               workspaces: _workspaces,
-              onCreateWorkspace: (name) => _createNewWorkspace(name),
+              onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
               onDeploy: () => _startNewDeployment(context, workspaceId),
               onPlantTap: (plant) {
                 if (plant.status == 'SLEEPING') {

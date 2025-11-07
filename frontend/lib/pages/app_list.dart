@@ -18,7 +18,7 @@ class ShelfPage extends StatefulWidget {
   final Map<String, dynamic>? userData;
   final IO.Socket socket;
   final List<dynamic> workspaces;
-  final Function(String) onCreateWorkspace;
+  final Function(String, String) onCreateWorkspace;
 
   const ShelfPage({
     Key? key,
@@ -78,16 +78,41 @@ class _ShelfPageState extends State<ShelfPage> {
 
   void _showCreateWorkspaceDialog() {
     final nameController = TextEditingController();
+    final descriptionController = TextEditingController(); // (설명 컨트롤러 추가)
+    final _formKey = GlobalKey<FormState>();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text("새 워크스페이스 생성"),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: InputDecoration(labelText: "워크스페이스 이름"),
+                validator: (val) => val!.isEmpty ? '이름을 입력하세요' : null,
+              ),
+              SizedBox(height: 16),
+              TextFormField( // (설명 필드 추가)
+                controller: descriptionController,
+                decoration: InputDecoration(labelText: "설명"),
+                validator: (val) => val!.isEmpty ? '설명을 입력하세요' : null,
+              ),
+            ],
+          ),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text("취소")),
           TextButton(
             onPressed: () {
-              if (nameController.text.isNotEmpty) {
-                widget.onCreateWorkspace(nameController.text);
+              if (_formKey.currentState!.validate()) {
+                widget.onCreateWorkspace(
+                    nameController.text,
+                    descriptionController.text
+                );
                 Navigator.pop(ctx);
               }
             },
