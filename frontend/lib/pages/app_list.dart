@@ -245,6 +245,18 @@ class _AppDashboardCard extends StatelessWidget {
     switch (plant.status) {
       case 'HEALTHY': // "정상" 상태
       case 'NORMAL':
+      // (수정) 0.0 ~ 1.0 사이의 비율로 정규화
+      // ⚠️ 중요: plant.cpuLimit, plant.memLimit 필드명은
+      //           실제 Plant 모델에 맞게 수정해야 합니다.
+
+      // 1. 0으로 나누기 방지를 위해 기본값(1.0) 설정
+      //   final double cpuLimit = plant.cpuLimit ?? 1.0;
+      //   final double memLimit = plant.memLimit ?? 1.0;
+
+        // 2. 0으로 나누기 방지 로직 추가
+      final double cpuPercent = plant.cpuUsage / 100.0;
+      final double memPercent = plant.memUsage / 100.0;
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -252,9 +264,10 @@ class _AppDashboardCard extends StatelessWidget {
             SizedBox(height: 4),
             Text(timeAgo, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
             Spacer(),
-            _buildProgressBar("CPU", plant.cpuUsage, Color(0xFF678AFB)),
+            // (수정) 정규화된 비율(percent)을 전달
+            _buildProgressBar("CPU", cpuPercent, Color(0xFF678AFB)),
             SizedBox(height: 8),
-            _buildProgressBar("메모리", plant.memUsage, Color(0xFF00B894)),
+            _buildProgressBar("메모리", memPercent, Color(0xFF00B894)),
           ],
         );
       case 'SLEEPING': // "겨울잠" 상태
