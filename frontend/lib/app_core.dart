@@ -194,7 +194,7 @@ class _AppCoreState extends State<AppCore> {
     // socket?.off('reaction-update', _onReactionUpdate);
     socket?.off('metrics-update', _onMetricsUpdate);
     socket?.off('workspaces-list', _onWorkspacesList);
-    // socket?.off('get-my-workspaces', _onGetMyWorkspaces);
+    socket?.off('workspaces-updated', _onWorkspacesUpdated);
 
     socket?.dispose();
     player.dispose();
@@ -225,7 +225,7 @@ class _AppCoreState extends State<AppCore> {
     // socket?.on('reaction-update', _onReactionUpdate); // (삭제)
     socket?.on('metrics-update', _onMetricsUpdate);
     socket?.on('workspaces-list', _onWorkspacesList);
-    // socket?.on('get-my-workspaces', _onGetMyWorkspaces);
+    socket?.on('workspaces-updated', _onWorkspacesUpdated);
   }
 
   // _onCurrentShelf 메소드 전체
@@ -274,20 +274,13 @@ class _AppCoreState extends State<AppCore> {
     }
   }
 
-  void _onPlantUpdate(dynamic data) {
+  void _onWorkspacesUpdated(dynamic data) {
     if (!mounted) return;
-    // shelf 변수가 없으므로 이 로직은 이제 ShelfPage에서 처리되어야 함
-    /*
-    setState(() {
-      try {
-        final plant = shelf.firstWhere((p) => p.id == data['id']);
-        plant.status = data['status'];
-        plant.version = data['version'] ?? plant.version;
-        plant.plantType = data['plantType'] ?? plant.plantType;
-        if(plant.status == 'SLEEPING') plant.currentStatusMessage = '겨울잠 상태';
-      } catch (e) { print('Update for unknown plant: ${data['id']}'); }
-    });
-    */
+    print("Workspace list changed on server, re-fetching...");
+
+    // setState(true) 대신, 요청만 수행합니다.
+    // 로딩 인디케이터는 _workspaces.isEmpty를 통해 간접적으로 처리하는 것이 더 안전합니다.
+    socket?.emit('get-my-workspaces');
   }
 
   void _onNewLog(dynamic data) {
@@ -341,6 +334,8 @@ class _AppCoreState extends State<AppCore> {
     if (!mounted) return;
     setState(() {
       _workspaces = (data as List).map((ws) => Workspace.fromMap(ws)).toList();
+
+      // 데이터 수신 완료 후 로딩 상태를 false로 설정하여 UI를 갱신합니다.
       _isLoadingWorkspaces = false;
     });
   }
@@ -404,8 +399,7 @@ class _AppCoreState extends State<AppCore> {
       builder: (BuildContext dialogContext) {
         return NewWorkspaceDialog(
           onWorkspaceCreated: (name, description, type) {
-            // (콜백) 여기서 생성 로직 실행
-            print("새 워크스페이스 생성됨: $name ($type)");
+            // 1. 워크스페이스 생성 요청 (서버로 emit)
             _createNewWorkspace(name, description, type);
           },
         );
