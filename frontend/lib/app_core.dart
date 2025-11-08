@@ -27,6 +27,7 @@ import 'pages/profile.dart';
 import 'pages/settings.dart';
 import 'pages/deployment.dart';
 import 'app_state.dart';
+import 'widgets/new_deploy.dart';
 
 
 class AppStateNavBuilder extends StatelessWidget {
@@ -370,62 +371,29 @@ class _AppCoreState extends State<AppCore> {
   void _startNewDeployment(BuildContext context, String workspaceId) {
     if (socket == null) return;
 
-    final gitUrlController = TextEditingController();
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final l10n = AppLocalizations.of(context)!;
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.deployNewApp),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: gitUrlController,
-              decoration: InputDecoration(
-                  labelText: 'Git Repository URL *', // (필수 항목)
-                  hintText: 'https://github.com/user/repo.git'
-              ),
-              autofocus: true,
-            ),
-            SizedBox(height: 10),
-            TextField(controller: nameController, decoration: InputDecoration(labelText: 'App Name (v1.5)')),
-            TextField(controller: descController, decoration: InputDecoration(labelText: 'Description')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
-          TextButton(
-              onPressed: () {
-                final gitUrl = gitUrlController.text.trim();
-                if (gitUrl.isEmpty || !gitUrl.startsWith('https://')) {
-                  // (간단한 유효성 검사)
-                  // (실제로는 gitUrlController 옆에 에러 텍스트를 보여주는 것이 더 좋음)
-                  print("Git URL이 유효하지 않습니다.");
-                  return;
-                }
+      // (수정) NewDeploymentDialog 위젯 사용
+      builder: (ctx) => NewDeploymentDialog(
+        onDeploymentStart: (appName, gitUrl, description) {
+          // NewDeploymentDialog에서 전달받은 데이터를 사용
+          final newName = appName.isNotEmpty ? appName : 'New App';
+          final newDesc = description != null && description.isNotEmpty ? description : 'New deployment...';
 
-                final newName = nameController.text.isNotEmpty ? nameController.text : 'New App';
-                final newDesc = descController.text.isNotEmpty ? descController.text : 'New deployment...';
-                Navigator.pop(ctx);
+          socket!.emit('start-deploy', {
+            'gitUrl': gitUrl,
+            'version': newName,
+            'description': newDesc,
+            'isWakeUp': false,
+            'workspaceId': workspaceId,
+          });
 
-                socket!.emit('start-deploy', {
-                  'gitUrl': gitUrl,
-                  'version': newName,
-                  'description': newDesc,
-                  'isWakeUp': false,
-                  'workspaceId': workspaceId
-                });
-
-                Navigator.push(context, MaterialPageRoute(
-                    builder: (context) => DeploymentLoadingPage(),
-                    settings: RouteSettings(name: '/loading')
-                ));
-              },
-              child: Text(l10n.deployNewApp)),
-        ],
+          // DeploymentLoadingPage로 이동하는 로직은 그대로 유지
+          Navigator.push(context, MaterialPageRoute(
+              builder: (context) => DeploymentLoadingPage(),
+              settings: RouteSettings(name: '/loading')
+          ));
+        },
       ),
     );
   }
@@ -548,22 +516,6 @@ class _AppCoreState extends State<AppCore> {
           ),
           // --- (상태에 따라 바뀌는 body) ---
           body: buildBody(navState), // (수정) buildBody에 navState 전달
-          // --- (Shelf 페이지일 때만 보이는 FAB) ---
-          floatingActionButton: Visibility(
-            // 2. _currentPage 상태에 따라 보이기/숨기기
-            visible: navState.currentIndex == 1,
-
-            // 3. 자식 위젯은 항상 존재 (null이 아님)
-            child: FloatingActionButton.extended(
-              key: const ValueKey('fab-shelf'), // (Key는 혹시 모르니 그대로 둡니다)
-              onPressed: () => _startNewDeployment(context, navState.workspaceId!),
-              label: Text(l10n.deployNewApp),
-              icon: Icon(Icons.add),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              shape: StadiumBorder(),
-            ),
-          ),
         );
       }
     );
