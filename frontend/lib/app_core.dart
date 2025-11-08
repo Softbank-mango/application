@@ -270,30 +270,18 @@ class _AppCoreState extends State<AppCore> {
     );
 
     if (mounted) {
-      // 1. AppState에 새로 생성된 Plant를 설정 (상태 업데이트용)
+      // 1. AppState에 새로 생성된 Plant를 저장 (DeploymentPage가 사용)
       appState.selectedPlant.value = newPlant;
 
-      // 2. DeploymentPage로의 페이지 이동은 하지 않음 (모달만 띄움)
+      // 2. (★★★★★ 최종 수정 ★★★★★)
+      //    socketService 매개변수 호출을 완전히 삭제합니다.
       showDialog(
-          context: context,
-          barrierDismissible: false, // 사용자가 임의로 닫지 못하도록 방지
-          builder: (deployCtx) {
-            // 화면 크기를 기반으로 모달 크기 설정
-            final Size screenSize = MediaQuery.of(deployCtx).size;
-
-            // (신규) PipelineMonitor 위젯을 포함하는 Dialog 반환
-            return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Container(
-                width: screenSize.width * 0.8, // 화면 너비의 80%
-                height: screenSize.height * 0.9, // 화면 높이의 90%
-                padding: const EdgeInsets.all(0),
-                // PipelineMonitor는 status 객체를 받아야 하지만,
-                // 배포 시작 시에는 status가 null이므로, Loading 위젯을 대신 띄웁니다.
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            );
-          }
+        context: context,
+        barrierDismissible: false, // 외부 클릭 방지
+        builder: (deployCtx) => DeployModal(
+          plant: newPlant, // Plant 객체만 전달
+          // socketService: socket!, // ◀ 이 매개변수를 완전히 제거합니다.
+        ),
       );
     }
   }
@@ -382,12 +370,13 @@ class _AppCoreState extends State<AppCore> {
 
     showDialog(
       context: context,
-      builder: (ctx) => NewDeploymentDialog( // (Git URL 입력창)
+      builder: (ctx) => NewDeploymentDialog( // Git URL 입력창 (New Deployment Dialog)
         onDeploymentStart: (appName, gitUrl, description) {
 
           final newName = appName.isNotEmpty ? appName : 'New App';
           final newDesc = description != null && description.isNotEmpty ? description : 'New deployment...';
 
+          // 1. 서버에 배포 요청을 보냅니다.
           socket!.emit('start-deploy', {
             'gitUrl': gitUrl,
             'version': newName,
@@ -396,17 +385,9 @@ class _AppCoreState extends State<AppCore> {
             'workspaceId': workspaceId,
           });
 
-          // Git URL 입력창이 닫힌 *직후*에
-          // 새로운 'DeployModal' (야구 애니메이션)을 띄웁니다.
-
-          // (삭제) Navigator.push(context, MaterialPageRoute(builder: (context) => DeploymentLoadingPage(), ...));
-
-          // (신규) 배포 진행률 모달을 띄웁니다.
-          showDialog(
-            context: context,
-            barrierDismissible: false, // 배포 중에는 밖을 눌러 닫기 방지
-            builder: (deployCtx) => const DeployModal(),
-          );
+          // 2. (★★★★★ 핵심 ★★★★★)
+          //    이 위치에서는 DeployModal을 띄우지 않습니다.
+          //    서버가 응답(new-plant)을 보낼 때까지 기다립니다.
         },
       ),
     );
