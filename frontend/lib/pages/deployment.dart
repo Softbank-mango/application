@@ -9,6 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/plant_model.dart';
 import '../models/logEntry_model.dart';
 import '../models/user_data.dart';
+import '../widgets/rollback_dialog.dart';
+
 
 class DeploymentPage extends StatefulWidget {
   final Plant plant;
@@ -57,6 +59,41 @@ class _DeploymentPageState extends State<DeploymentPage> {
   static const Color _successBgColor = Color(0xFFF0FDF4);
   static const Color _memColor = Color(0xFF34D399);
 
+  // 1. 더미 데이터 생성 (이 부분은 실제 데이터로 대체해야 함)
+  final List<DeploymentHistoryItem> dummyHistory = [
+    DeploymentHistoryItem(
+      id: "3",
+      version: "v1.2.3",
+      statusText: "현재",
+      statusColor: Color(0xFF007BFF), // 파란색
+      deployedAt: DateTime(2024, 1, 1, 14, 30),
+      deployer: "김개발",
+      commitSha: "a1b2c3d",
+      commitMessage: "feat: 새로운 대시보드 UI 추가",
+      isCurrentVersion: true, // 이게 현재 버전
+    ),
+    DeploymentHistoryItem(
+      id: "2",
+      version: "v1.2.2",
+      statusText: "성공",
+      statusColor: Color(0xFF28A745), // 초록색
+      deployedAt: DateTime(2024, 1, 1, 10, 15),
+      deployer: "이개발",
+      commitSha: "e4f5g6h",
+      commitMessage: "fix: 로그인 버그 수정",
+    ),
+    DeploymentHistoryItem(
+      id: "1",
+      version: "v1.2.1",
+      statusText: "실패",
+      statusColor: Color(0xFFDC3545), // 빨간색
+      deployedAt: DateTime(2024, 1, 1, 9, 0),
+      deployer: "박개발",
+      commitSha: "i7j8k9l",
+      commitMessage: "feat: 초기 배포",
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +116,30 @@ class _DeploymentPageState extends State<DeploymentPage> {
     widget.socket.off('new-log', _onNewLog);
     widget.socket.off('metrics-update', _onMetricsUpdate);
     super.dispose();
+  }
+
+// 2. "롤백" 버튼 클릭 시 이 함수 호출
+  void _showRollbackDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return RollbackDialog(
+          currentAppName: "Frontend App", // (실제 앱 이름 전달)
+          history: dummyHistory, // (실제 히스토리 리스트 전달)
+          onRollbackConfirmed: (selectedItem) {
+            // 롤백 실행 로직
+            print("${selectedItem.version}으로 롤백을 시작합니다.");
+
+            // 예: socket.emit('start-rollback', {'id': selectedItem.id});
+
+            // (선택) 롤백 시작을 알리는 스낵바 표시
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("${selectedItem.version}으로 롤백을 시작합니다...")),
+            );
+          },
+        );
+      },
+    );
   }
 
   // --- 소켓 리스너 ---
@@ -396,6 +457,31 @@ class _DeploymentPageState extends State<DeploymentPage> {
 
   // (2-2) 배포 정보 카드 (버튼 포함)
   Widget _buildDeploymentInfoCard(BuildContext context) {
+    // --- (신규) 버튼 스타일 정의 ---
+
+    // "재배포" 버튼 스타일 (파란색 배경)
+    final ButtonStyle redeployButtonStyle = ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFF2962FF), // (이미지 기준 파란색)
+      foregroundColor: Colors.white,
+      minimumSize: const Size(double.infinity, 48), // (높이)
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      elevation: 0, // 그림자 없음
+    );
+
+    // "롤백", "설정" 버튼 스타일 (흰색 배경, 회색 테두리)
+    final ButtonStyle outlinedButtonStyle = OutlinedButton.styleFrom(
+      backgroundColor: Colors.white,
+      foregroundColor: const Color(0xFF424242), // (어두운 텍스트 색상)
+      minimumSize: const Size(double.infinity, 48), // (높이)
+      side: BorderSide(color: const Color(0xFFE0E0E0), width: 1.5), // (회색 테두리)
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+
+    // --- (수정) 기존 Card 위젯 ---
     return _buildBaseCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,27 +493,44 @@ class _DeploymentPageState extends State<DeploymentPage> {
           _buildInfoRow("인스턴스", "2개"),
           _buildInfoRow("리전", "Asia-Northeast1"),
 
-          // const Spacer(), // (버튼들을 하단으로 밀어냄)
+          // (수정) 정보와 버튼 사이 간격 추가
+          const SizedBox(height: 24),
 
-          ElevatedButton(
-            onPressed: () { /* TODO: 재배포 로직 */ },
-            child: Text("재배포"),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 44),
-              backgroundColor: _primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: widget.onShowSettings, // (app_core 콜백)
-            child: Text("설정", style: TextStyle(color: _textColor)),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 44),
-              side: BorderSide(color: _borderColor),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
+          // (수정) 기존 버튼들을 삭제하고 3개 버튼 Column으로 교체
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. 재배포 버튼
+              ElevatedButton(
+                onPressed: () {
+                  /* TODO: 재배포 로직 */
+                },
+                style: redeployButtonStyle,
+                child: const Text("재배포", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+
+              const SizedBox(height: 12), // (버튼 사이 간격)
+
+              // 2. (신규) 롤백 버튼
+              OutlinedButton.icon(
+                onPressed: () {
+                  // TODO: 이전에 만든 _showRollbackDialog(context) 함수 호출
+                  // 예: _showRollbackDialog(context);
+                },
+                style: outlinedButtonStyle,
+                icon: const Icon(Icons.history, size: 20),
+                label: const Text("롤백", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+
+              const SizedBox(height: 12), // (버튼 사이 간격)
+
+              // 3. 설정 버튼 (기존 버튼 수정)
+              OutlinedButton(
+                onPressed: widget.onShowSettings, // (app_core 콜백)
+                style: outlinedButtonStyle,
+                child: const Text("설정", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ],
           ),
         ],
       ),
