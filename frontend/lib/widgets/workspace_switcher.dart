@@ -1,10 +1,7 @@
-// lib/widgets/workspace_switcher.dart
-
 import 'package:flutter/material.dart';
-import '../models/workspace.dart'; // (★★★★★ 1. Workspace 모델 임포트 ★★★★★)
+import '../models/workspace.dart'; // (Workspace 모델 임포트)
 
 class WorkspaceSwitcher extends StatelessWidget {
-  // (★★★★★ 2. List<dynamic> -> List<Workspace>로 변경 ★★★★★)
   final List<Workspace> workspaces;
   final String? currentWorkspaceId;
   final String currentWorkspaceName;
@@ -24,96 +21,137 @@ class WorkspaceSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // --- (신규) 이미지와 100% 일치하는 색상 정의 ---
+    const Color iconColor = Color(0xFF6B7280); // 버튼 아이콘/화살표
+    const Color textColor = Color(0xFF111827); // 버튼 텍스트
+    const Color selectedTextColor = Color(0xFF2563EB); // 메뉴 - 선택된 텍스트/아이콘
+    const Color selectedBgColor = Color(0xFFEFF6FF); // 메뉴 - 선택된 배경
+    const Color menuIconColor = Color(0xFF4B5563); // 메뉴 - 기본 아이콘
+
+    // --- (신규) 팝업 메뉴를 여는 버튼 (Child) ---
+    // 기존의 파란 배경 컨테이너 대신, 이미지와 동일한 UI로 변경
+    Widget triggerButton = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+      // (참고) TopBar와 배경색을 맞추기 위해 transparent로 설정
+      color: Colors.transparent,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // (신규) 이미지에 있는 건물 아이콘
+          const Icon(Icons.corporate_fare_outlined, size: 20, color: iconColor),
+          const SizedBox(width: 8),
+          Text(
+            // 워크스페이스가 선택되었는지 확인
+            currentWorkspaceId != null ? currentWorkspaceName : "워크스페이스 선택",
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: textColor, // (수정) theme.colorScheme.primary -> textColor
+            ),
+          ),
+          const SizedBox(width: 4),
+          // (수정) 아이콘 및 색상 변경
+          const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: iconColor),
+        ],
+      ),
+    );
+
+    // --- (신규) PopupMenuButton으로 감싸기 ---
     return PopupMenuButton<String>(
       tooltip: "워크스페이스 전환",
-
-      // (버튼 모양 커스텀 - 기존과 동일)
-      child: Container(
-        margin: const EdgeInsets.only(right: 8.0),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8.0),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              currentWorkspaceName,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-            SizedBox(width: 4),
-            Icon(
-              Icons.arrow_drop_down,
-              color: theme.colorScheme.primary,
-              size: 20,
-            ),
-          ],
-        ),
+      // (신규) 메뉴가 버튼 바로 아래(수직 50px)에 뜨도록 오프셋 조정
+      offset: const Offset(0, 50),
+      // (신규) 모서리 둥글게 (이미지 기준 12px)
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12.0),
       ),
+      // (신규) 그림자 (elevation)
+      elevation: 8,
+      // (신규) 메뉴 배경색
+      color: Colors.white,
+      // (신규) 메뉴가 차지할 수 있는 너비 (이미지 기준)
+      constraints: const BoxConstraints(minWidth: 280),
 
       onSelected: (String value) {
         if (value == '__CREATE_NEW__') {
           onCreateWorkspace();
         } else {
-          // (★★★★★ 3. w['id'] -> w.id 로 변경 ★★★★★)
           final ws = workspaces.firstWhere((w) => w.id == value);
-          // (★★★★★ 4. ws['id'] -> ws.id, ws['name'] -> ws.name 으로 변경 ★★★★★)
           onWorkspaceSelected(ws.id, ws.name);
         }
       },
+
       itemBuilder: (BuildContext context) {
-        final theme = Theme.of(context);
         List<PopupMenuEntry<String>> items = [];
 
         // 1. 워크스페이스 목록
         for (final ws in workspaces) { // (ws는 이제 Workspace 객체)
+          final bool isSelected = ws.id == currentWorkspaceId;
+
           items.add(
             PopupMenuItem<String>(
-              // (★★★★★ 5. ws['id'] -> ws.id 로 변경 ★★★★★)
               value: ws.id,
-              child: Row(
-                children: [
-                  Icon(
-                    // (★★★★★ 6. ws['id'] -> ws.id 로 변경 ★★★★★)
-                    ws.id == currentWorkspaceId
-                        ? Icons.check_circle
-                        : Icons.radio_button_unchecked,
-                    color: ws.id == currentWorkspaceId
-                        ? theme.colorScheme.primary
-                        : theme.hintColor,
-                  ),
-                  SizedBox(width: 10),
-                  // (★★★★★ 7. ws['name'] -> ws.name 으로 변경 ★★★★★)
-                  Text(ws.name),
-                ],
+              // (수정) 배경색을 꽉 채우기 위해 기본 패딩 제거
+              padding: EdgeInsets.zero,
+              child: Container(
+                // (수정) 선택 여부에 따라 배경색 변경
+                color: isSelected ? selectedBgColor : Colors.white,
+                // (수정) 패딩 수동 적용
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.corporate_fare_outlined, // (수정) 아이콘 통일
+                      size: 20,
+                      // (수정) 선택 여부에 따라 아이콘 색상 변경
+                      color: isSelected ? selectedTextColor : menuIconColor,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      ws.name,
+                      style: TextStyle(
+                        // (수정) 선택 여부에 따라 텍스트 스타일 변경
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? selectedTextColor : textColor,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
         }
 
         // 2. 구분선
-        items.add(PopupMenuDivider());
+        // (수정) 구분선 위아래로 꽉 차도록 높이 1로 설정
+        items.add(const PopupMenuDivider(height: 1.0));
 
         // 3. 새 워크스페이스 생성 버튼
         items.add(
           PopupMenuItem<String>(
             value: '__CREATE_NEW__',
-            child: Row(
-              children: [
-                Icon(Icons.add, color: theme.textTheme.bodyMedium?.color),
-                SizedBox(width: 10),
-                Text("새 워크스페이스 생성"),
-              ],
+            padding: EdgeInsets.zero, // (수정)
+            child: Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.add, size: 20, color: menuIconColor), // (수정)
+                  const SizedBox(width: 12),
+                  const Text(
+                    "새 워크스페이스 생성", // (.arb에 없으므로 하드코딩)
+                    style: TextStyle(color: textColor, fontSize: 16), // (수정)
+                  ),
+                ],
+              ),
             ),
           ),
         );
 
         return items;
       },
+
+      child: triggerButton, // 위에서 정의한 버튼 위젯
     );
   }
 }
