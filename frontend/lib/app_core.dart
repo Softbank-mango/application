@@ -26,6 +26,61 @@ import 'widgets/top_bar.dart';
 import 'pages/profile.dart';
 import 'pages/settings.dart';
 import 'pages/deployment.dart';
+import 'app_state.dart';
+
+
+class AppStateNavBuilder extends StatelessWidget {
+  final Widget Function(BuildContext context, NavState navState) builder;
+  const AppStateNavBuilder({Key? key, required this.builder}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = AppState.instance;
+    return ValueListenableBuilder<int>(
+      valueListenable: appState.currentIndex,
+      builder: (context, currentIndex, _) {
+        return ValueListenableBuilder<String?>(
+          valueListenable: appState.selectedWorkspaceId,
+          builder: (context, workspaceId, _) {
+            return ValueListenableBuilder<String>(
+              valueListenable: appState.selectedWorkspaceName,
+              builder: (context, workspaceName, _) {
+                return ValueListenableBuilder<Plant?>(
+                  valueListenable: appState.selectedPlant,
+                  builder: (context, plant, _) {
+                    return builder(
+                      context,
+                      NavState(
+                        currentIndex: currentIndex,
+                        workspaceId: workspaceId,
+                        workspaceName: workspaceName,
+                        plant: plant,
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// 헬퍼 위젯이 사용할 데이터 클래스
+class NavState {
+  final int currentIndex;
+  final String? workspaceId;
+  final String workspaceName;
+  final Plant? plant;
+  NavState({
+    required this.currentIndex,
+    required this.workspaceId,
+    required this.workspaceName,
+    required this.plant,
+  });
+}
 
 class AppCore extends StatefulWidget {
   @override
@@ -51,8 +106,8 @@ class _AppCoreState extends State<AppCore> {
   List<Workspace> _workspaces = [];
   bool _isLoadingWorkspaces = true;
 
-  String? _selectedWorkspaceId;
-  String _selectedWorkspaceName = "";
+  // String? _selectedWorkspaceId;
+  // String _selectedWorkspaceName = "";
 
   Plant? _selectedPlant;
   // AppPage _currentPage = AppPage.workspaceSelection;
@@ -60,7 +115,9 @@ class _AppCoreState extends State<AppCore> {
   // 로딩 상태를 하나로 통합
   bool _isLoading = true;
 
-  int _currentIndex = 0; // 0: workspaceSelection, 1: shelf, 2: profile, 3: settings, 4: deployment
+  // int _currentIndex = 0; // 0: workspaceSelection, 1: shelf, 2: profile, 3: settings, 4: deployment
+
+  final AppState appState = AppState.instance;
 
   @override
   void initState() {
@@ -104,6 +161,12 @@ class _AppCoreState extends State<AppCore> {
     await connectToSocket(token);
 
     // (신규) 소켓 연결 후 워크스페이스 목록 바로 요청
+    socket?.emit('get-my-workspaces');
+
+    if (socket != null) {
+      appState.setSocket(socket!);
+    }
+
     socket?.emit('get-my-workspaces');
 
     if (mounted) {
@@ -171,13 +234,13 @@ class _AppCoreState extends State<AppCore> {
     });
   }
   */
-  void _goBackToWorkspaceSelection() {
-    setState(() {
-      _selectedWorkspaceId = null;
-      _selectedWorkspaceName = "";
-      _currentIndex = 0;
-    });
-  }
+  // void _goBackToWorkspaceSelection() {
+  //   setState(() {
+  //     _selectedWorkspaceId = null;
+  //     _selectedWorkspaceName = "";
+  //     _currentIndex = 0;
+  //   });
+  // }
 
 
   void _onNewPlant(dynamic data) {
@@ -204,10 +267,7 @@ class _AppCoreState extends State<AppCore> {
     );
 
     if (mounted) {
-      setState(() {
-        _selectedPlant = newPlant;
-        _currentIndex = 4; // 배포 페이지로 즉시 이동
-      });
+      appState.navigateToDeployment(newPlant);
     }
   }
 
@@ -375,61 +435,6 @@ class _AppCoreState extends State<AppCore> {
     socket!.emit('slack-reaction', {'id': id, 'emoji': emoji});
   }
 
-  // 워크스페이스 선택 시 호출 (Shelf 페이지로)
-  void _onWorkspaceSelected(String workspaceId, String workspaceName) {
-    socket!.emit('join-workspace', workspaceId);
-    setState(() {
-      _selectedWorkspaceId = workspaceId;
-      _selectedWorkspaceName = workspaceName;
-      _currentIndex = 1; // (수정) Shelf 페이지
-    });
-  }
-
-  // 프로필 페이지로 이동
-  void _showProfilePage() {
-    setState(() {
-      _currentIndex = 2; // (수정) Profile 페이지
-    });
-  }
-
-  // 프로필에서 대시보드(Shelf)로 복귀
-  void _showShelfPage() {
-    setState(() {
-      _selectedPlant = null; // (선택된 플랜트 해제)
-
-      // (수정) 워크스페이스 ID가 null인지 확인
-      if (_selectedWorkspaceId == null) {
-        // 선택된 워크스페이스가 없으면 Shelf(1)가 아니라
-        // WorkspaceSelection(0)으로 보냅니다.
-        _currentIndex = 0;
-      } else {
-        // 선택된 워크스페이스가 있으면 Shelf(1)로 보냅니다.
-        _currentIndex = 1;
-      }
-    });
-  }
-
-// ProfileMenu에서 "워크스페이스 설정" 누르면 Settings로
-  void _showSettingsPage() {
-    setState(() {
-      _currentIndex = 3; // (수정) Settings 페이지
-    });
-  }
-
-  // SettingsPage에서 "프로필로 돌아가기" 누르면 Profile
-  void _goBackToProfile() {
-    setState(() {
-      _currentIndex = 2; // (수정) Profile 페이지
-    });
-  }
-
-  void _navigateToDeployment(Plant plant) {
-    setState(() {
-      _selectedPlant = plant;
-      _currentIndex = 4; // (수정) Deployment 페이지
-    });
-  }
-
   void _showCreateWorkspaceDialog(BuildContext context) {
     final TextEditingController nameController = TextEditingController();
     final TextEditingController descriptionController = TextEditingController();
@@ -521,47 +526,53 @@ class _AppCoreState extends State<AppCore> {
     final l10n = AppLocalizations.of(context)!;
 
     // 2. 로딩 완료 시 (공통 Scaffold)
-    return Scaffold(
-      // --- (공통 TopBar) ---
-      appBar: TopBar(
-        currentUser: _currentUser!,
-        userData: _userData,
-        workspaces: _workspaces,
-        selectedWorkspaceId: _selectedWorkspaceId,
-        selectedWorkspaceName: _selectedWorkspaceName,
-        isLoading: _isLoadingWorkspaces,
-        onLogout: _onLogout,
-        goBackToWorkspaceSelection: _goBackToWorkspaceSelection,
-        onWorkspaceSelected: _onWorkspaceSelected,
-        onCreateWorkspace: () => _showCreateWorkspaceDialog(context),
-        onShowProfile: _showProfilePage,
-        onShowSettings: _showSettingsPage,
-      ),
-      // --- (상태에 따라 바뀌는 body) ---
-      body: buildBody(),
-      // --- (Shelf 페이지일 때만 보이는 FAB) ---
-      floatingActionButton: Visibility(
-        // 2. _currentPage 상태에 따라 보이기/숨기기
-        visible: _currentIndex == 1,
+    return AppStateNavBuilder(
+      builder: (context, navState) {
+        return Scaffold(
+          // --- (공통 TopBar) ---
+          appBar: TopBar(
+            currentUser: _currentUser!,
+            userData: _userData,
+            workspaces: _workspaces,
+            isLoading: _isLoadingWorkspaces,
+            onLogout: _onLogout,
+            onCreateWorkspace: () => _showCreateWorkspaceDialog(context),
 
-        // 3. 자식 위젯은 항상 존재 (null이 아님)
-        child: FloatingActionButton.extended(
-          key: const ValueKey('fab-shelf'), // (Key는 혹시 모르니 그대로 둡니다)
-          onPressed: () => _startNewDeployment(context, _selectedWorkspaceId!),
-          label: Text(l10n.deployNewApp),
-          icon: Icon(Icons.add),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          foregroundColor: Theme.of(context).colorScheme.onPrimary,
-          shape: StadiumBorder(),
-        ),
-      ),
+            // (수정) AppState에서 가져온 상태와 함수들
+            selectedWorkspaceId: navState.workspaceId,
+            selectedWorkspaceName: navState.workspaceName,
+            goBackToWorkspaceSelection: appState.goBackToWorkspaceSelection,
+            onWorkspaceSelected: appState.onWorkspaceSelected,
+            onShowProfile: appState.showProfilePage,
+            onShowSettings: appState.showSettingsPage,
+          ),
+          // --- (상태에 따라 바뀌는 body) ---
+          body: buildBody(navState), // (수정) buildBody에 navState 전달
+          // --- (Shelf 페이지일 때만 보이는 FAB) ---
+          floatingActionButton: Visibility(
+            // 2. _currentPage 상태에 따라 보이기/숨기기
+            visible: navState.currentIndex == 1,
+
+            // 3. 자식 위젯은 항상 존재 (null이 아님)
+            child: FloatingActionButton.extended(
+              key: const ValueKey('fab-shelf'), // (Key는 혹시 모르니 그대로 둡니다)
+              onPressed: () => _startNewDeployment(context, navState.workspaceId!),
+              label: Text(l10n.deployNewApp),
+              icon: Icon(Icons.add),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              shape: StadiumBorder(),
+            ),
+          ),
+        );
+      }
     );
   }
 
 // (신규) body 빌드 헬퍼 함수
-  Widget buildBody() {
+  Widget buildBody(NavState navState) {
     return IndexedStack(
-      index: _currentIndex,
+      index: navState.currentIndex, // (수정)
       children: [
         // --- Index 0: workspaceSelection ---
         WorkspaceSelectionPage(
@@ -570,39 +581,25 @@ class _AppCoreState extends State<AppCore> {
           workspaces: _workspaces,
           onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
           onLogout: _onLogout,
-          onWorkspaceSelected: _onWorkspaceSelected,
+          onWorkspaceSelected: appState.onWorkspaceSelected, // (수정)
         ),
 
         // --- Index 1: shelf ---
-        // (수정) _selectedWorkspaceId가 null일 때를 대비해 Builder로 감쌉니다.
         Builder(
             builder: (context) {
-              // 워크스페이스가 아직 선택되지 않았다면(null),
-              // ShelfPage를 빌드하지 않고 간단한 Placeholder를 반환합니다.
-              if (_selectedWorkspaceId == null) {
-                // 이 위젯은 어차피 _currentIndex가 0일 때는 보이지 않으므로
-                // 로딩 인디케이터나 간단한 텍스트를 반환해도 됩니다.
+              if (navState.workspaceId == null) { // (수정)
                 return const Center(child: CircularProgressIndicator());
               }
-
-              // _selectedWorkspaceId가 선택되었다면(null이 아님) ShelfPage를 정상 빌드합니다.
               return ShelfPage(
                 currentUser: _currentUser!,
                 userData: _userData,
-                workspaceId: _selectedWorkspaceId!, // (이제 null이 아님을 확신)
-                workspaceName: _selectedWorkspaceName,
+                workspaceId: navState.workspaceId!, // (수정)
+                workspaceName: navState.workspaceName, // (수정)
                 socket: socket!,
                 workspaces: _workspaces,
                 onCreateWorkspace: (name, description) => _createNewWorkspace(name, description),
-                onDeploy: () => _startNewDeployment(context, _selectedWorkspaceId!),
-                onPlantTap: (plant) {
-                  if (plant.status == 'SLEEPING') {
-                    socket!.emit('start-deploy', {
-                      'id': plant.id, 'isWakeUp': true, 'workspaceId': _selectedWorkspaceId!
-                    });
-                  }
-                  _navigateToDeployment(plant);
-                },
+                onDeploy: () => _startNewDeployment(context, navState.workspaceId!),
+                onPlantTap: appState.navigateToDeployment, // (수정)
                 onSlackReaction: (id, emoji) => _sendSlackReaction(id, emoji),
               );
             }
@@ -612,39 +609,39 @@ class _AppCoreState extends State<AppCore> {
         ProfilePage(
           currentUser: _currentUser!,
           userData: _userData,
-          onGoBackToDashboard: _showShelfPage,
+          onGoBackToDashboard: appState.showShelfPage, // (수정)
         ),
 
         // --- Index 3: settings ---
         SettingsPage(
-          onGoBackToProfile: _goBackToProfile,
+          onGoBackToProfile: appState.goBackToProfile, // (수정)
         ),
 
         // --- Index 4: deployment ---
-        // (이 부분은 이미 Builder로 잘 처리되어 있습니다)
         Builder(
             builder: (context) {
-              if (_selectedPlant == null) {
 
-                // (수정)
-                // 현재 페이지가 4(Deployment)가 아니면 튕겨내지 않도록 수정
-                if (_currentIndex == 4) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _showShelfPage(); // 현재 4번 페이지에 머무르려고 할 때만 튕겨냄
-                  });
-                }
-                return const Center(child: Text("앱을 선택해주세요..."));
+              // (수정)
+              // 튕김 로직(addPostFrameCallback)을 모두 삭제합니다.
+              //
+              // navState.plant가 null이면,
+              // 페이지를 강제로 이동시키는 대신 비어있는 상태를 표시합니다.
+              if (navState.plant == null) {
+                // 현재 인덱스가 4인데 plant가 null인 비정상적인 상황.
+                // 로딩을 보여주거나, 에러 메시지를 보여줍니다.
+                return const Center(child: Text("선택된 앱을 불러오는 중..."));
               }
 
-              // _selectedPlant가 null이 아니면 정상적으로 페이지를 빌드
+              // navState.plant가 null이 아닐 때만 DeploymentPage를 빌드합니다.
               return DeploymentPage(
-                plant: _selectedPlant!,
+                plant: navState.plant!,
                 socket: socket!,
                 currentUser: _currentUser!,
                 userData: _userData,
-                workspaceId: _selectedWorkspaceId!,
-                onGoBackToDashboard: _showShelfPage,
-                onShowSettings: _showSettingsPage,
+                // (수정) workspaceId가 null일 수 있으므로 null-check 추가
+                workspaceId: navState.workspaceId ?? "",
+                onGoBackToDashboard: appState.showShelfPage,
+                onShowSettings: appState.showSettingsPage,
               );
             }
         ),
