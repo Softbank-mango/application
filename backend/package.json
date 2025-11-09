@@ -30,7 +30,8 @@
     "express": "^5.1.0",
     "firebase-admin": "^13.6.0",
     "socket.io": "^4.8.1",
-    "zod": "^4.1.12"
+    "zod": "^4.1.12",
+    "@octokit/rest": "^20.0.2"
   },
   "engines": {
     "node": ">=18"

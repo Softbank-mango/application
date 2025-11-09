@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const admin = require('firebase-admin');
 
-const { 
+const {
   createWorkspaceSchema,
   startDeploySchema,
   startRollbackSchema,
@@ -13,6 +13,23 @@ const {
   deleteSecretSchema,
   updateSecretSchema
 } = require('./schemas');
+
+const GitHubService = require('./github_service');
+
+// Initialize GitHub service (GitHub token from environment variable)
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+let githubService = null;
+
+if (GITHUB_TOKEN) {
+  try {
+    githubService = new GitHubService(GITHUB_TOKEN);
+    console.log('✅ GitHub Service initialized successfully');
+  } catch (error) {
+    console.error('⚠️ Failed to initialize GitHub Service:', error.message);
+  }
+} else {
+  console.warn('⚠️  No GITHUB_TOKEN found. Real deployments will not work.');
+}
 
 // Firebase Admin SDK 초기화
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
@@ -224,11 +241,20 @@ io.on('connection', (socket) => {
           version: version || `New_App_v1`,
           description: description || '새 배포입니다...',
           status: 'DEPLOYING',
-          // ... (기존과 동일)
+          aiInsight: 'AI가 배포를 분석 중입니다...',
+          health: '알 수 없음',
+          createdAt: new Date(),
+          updatedAt: new Date(),
         };
         const docRef = await db.collection('plants').add(newPlant);
         socket.emit('new-plant', { id: docRef.id, ...newPlant });
-        runFakeSelfHealingDeploy(docRef.id, false);
+
+        // Real GitHub deployment if available, otherwise fake
+        if (githubService) {
+          runRealGitHubDeploy(docRef.id, gitUrl, version, false);
+        } else {
+          runFakeSelfHealingDeploy(docRef.id, false);
+        }
       }
     } catch (err) {
       console.error('Start Deploy Error:', err);
@@ -653,6 +679,149 @@ async function runFakeRollback(plant) {
       updatedAt: new Date()
     });
   }, 6000);
+}
+
+// ============================================
+// Real GitHub Deployment Function
+// ============================================
+async function runRealGitHubDeploy(deployId, gitUrl, appVersion, isWakeUp = false) {
+  const plantRef = db.collection('plants').doc(deployId);
+  let workspaceId = null;
+
+  try {
+    const doc = await plantRef.get();
+    if (!doc.exists) {
+      throw new Error("Plant not found");
+    }
+    workspaceId = doc.data().workspaceId;
+    if (!workspaceId) {
+      throw new Error("Workspace ID not found on plant.");
+    }
+
+    console.log(`[Real Deploy] Starting deployment for ${deployId}`);
+    emitLog(deployId, 'SYSTEM', `GitHub Actions 워크플로우를 트리거합니다...`);
+
+    // Trigger GitHub Actions workflow
+    const deployment = await githubService.triggerDeployment(gitUrl, 'main', deployId);
+    console.log(`[Real Deploy] Workflow triggered: Run ID ${deployment.runId}`);
+
+    emitLog(deployId, 'SYSTEM', `배포 시작됨: Run ID ${deployment.runId}`);
+    emitLog(deployId, 'SYSTEM', `워크플로우 URL: ${deployment.url}`);
+
+    // Poll for deployment progress
+    let previousJobStatuses = {};
+    let lastUpdateTime = Date.now();
+    const pollInterval = 10000; // 10 seconds
+
+    const pollDeployment = async () => {
+      try {
+        const status = await githubService.getWorkflowStatus(deployment.runId);
+
+        // Check if any jobs changed status
+        const currentJobStatuses = {};
+        let hasChanges = false;
+
+        status.jobs.forEach(job => {
+          const jobKey = job.name;
+          const jobStatus = `${job.status}:${job.conclusion}`;
+          currentJobStatuses[jobKey] = jobStatus;
+
+          if (!previousJobStatuses[jobKey] || previousJobStatuses[jobKey] !== jobStatus) {
+            hasChanges = true;
+            // Map GitHub Actions job status to user-friendly messages
+            const statusEmoji = {
+              'in_progress:null': '⏳',
+              'completed:success': '✅',
+              'completed:failure': '❌',
+              'completed:cancelled': '🚫',
+              'queued:null': '⌛'
+            };
+
+            const emoji = statusEmoji[jobStatus] || '📋';
+            const message = `${emoji} ${job.name}: ${job.status}`;
+            emitLog(deployId, 'PIPELINE', message);
+          }
+        });
+
+        previousJobStatuses = currentJobStatuses;
+
+        // Update plant status based on workflow status
+        if (status.status === 'completed') {
+          if (status.conclusion === 'success') {
+            emitLog(deployId, 'SYSTEM', '✅ 배포가 성공적으로 완료되었습니다!');
+
+            // Get deployment service info
+            const albDns = 'delightful-deploy-alb-500232323.ap-northeast-2.elb.amazonaws.com';
+            const serviceUrl = `http://${albDns}/app/${deployId}/`;
+
+            await plantRef.update({
+              status: 'HEALTHY',
+              plantType: 'rose',
+              version: appVersion || 'v1.0',
+              aiInsight: '배포가 성공적으로 완료되었습니다.',
+              health: '정상',
+              deploymentUrl: serviceUrl,
+              githubRunId: deployment.runId,
+              updatedAt: new Date()
+            });
+
+            io.to(workspaceId).emit('plant-update', {
+              id: deployId,
+              status: 'HEALTHY',
+              deploymentUrl: serviceUrl
+            });
+
+            emitLog(deployId, 'SYSTEM', `앱 접속 URL: ${serviceUrl}`);
+          } else {
+            emitLog(deployId, 'SYSTEM_ERROR', `❌ 배포 실패: ${status.conclusion}`);
+            await plantRef.update({
+              status: 'ERROR',
+              aiInsight: `배포 실패: ${status.conclusion}`,
+              health: '오류',
+              githubRunId: deployment.runId,
+              updatedAt: new Date()
+            });
+
+            io.to(workspaceId).emit('plant-update', {
+              id: deployId,
+              status: 'ERROR'
+            });
+          }
+        } else {
+          // Still in progress, poll again
+          setTimeout(pollDeployment, pollInterval);
+        }
+
+      } catch (error) {
+        console.error('[Real Deploy] Error polling deployment:', error);
+        emitLog(deployId, 'SYSTEM_ERROR', `폴링 오류: ${error.message}`);
+
+        // Retry polling after a delay
+        setTimeout(pollDeployment, pollInterval * 2);
+      }
+    };
+
+    // Start polling
+    setTimeout(pollDeployment, pollInterval);
+
+  } catch (error) {
+    console.error('[Real Deploy] Error:', error);
+    emitLog(deployId, 'SYSTEM_ERROR', `배포 오류: ${error.message}`);
+
+    if (workspaceId) {
+      await plantRef.update({
+        status: 'ERROR',
+        aiInsight: `배포 실패: ${error.message}`,
+        health: '오류',
+        updatedAt: new Date()
+      });
+
+      io.to(workspaceId).emit('plant-update', {
+        id: deployId,
+        status: 'ERROR'
+      });
+    }
+  }
 }
 
 // Cloud Run 포트 사용
