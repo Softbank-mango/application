@@ -1,5 +1,3 @@
-// pages/deployment.dart
-
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:fl_chart/fl_chart.dart';
@@ -60,23 +58,23 @@ class _DeploymentPageState extends State<DeploymentPage> {
   static const Color _memColor = Color(0xFF34D399);
 
   // 1. 더미 데이터 생성 (이 부분은 실제 데이터로 대체해야 함)
-  final List<DeploymentHistoryItem> dummyHistory = [
+  final List<DeploymentHistoryItem> _dummyHistory = [
     DeploymentHistoryItem(
       id: "3",
       version: "v1.2.3",
       statusText: "현재",
-      statusColor: Color(0xFF007BFF), // 파란색
+      statusColor: const Color(0xFF42A5F5), // 파란색
       deployedAt: DateTime(2024, 1, 1, 14, 30),
       deployer: "김개발",
       commitSha: "a1b2c3d",
       commitMessage: "feat: 새로운 대시보드 UI 추가",
-      isCurrentVersion: true, // 이게 현재 버전
+      isCurrentVersion: true,
     ),
     DeploymentHistoryItem(
       id: "2",
       version: "v1.2.2",
       statusText: "성공",
-      statusColor: Color(0xFF28A745), // 초록색
+      statusColor: const Color(0xFF66BB6A), // 초록색
       deployedAt: DateTime(2024, 1, 1, 10, 15),
       deployer: "이개발",
       commitSha: "e4f5g6h",
@@ -86,7 +84,7 @@ class _DeploymentPageState extends State<DeploymentPage> {
       id: "1",
       version: "v1.2.1",
       statusText: "실패",
-      statusColor: Color(0xFFDC3545), // 빨간색
+      statusColor: const Color(0xFFEF5350), // 빨간색
       deployedAt: DateTime(2024, 1, 1, 9, 0),
       deployer: "박개발",
       commitSha: "i7j8k9l",
@@ -101,7 +99,7 @@ class _DeploymentPageState extends State<DeploymentPage> {
 
     widget.socket.on('status-update', _onStatusUpdate);
     widget.socket.on('new-log', _onNewLog);
-    widget.socket.on('metrics-update', _onMetricsUpdate);
+    _toggleMetricsListeners(true);
 
     widget.socket.emit('get-logs-for-plant', plant.id);
 
@@ -114,32 +112,58 @@ class _DeploymentPageState extends State<DeploymentPage> {
     _logScrollController.dispose();
     widget.socket.off('status-update', _onStatusUpdate);
     widget.socket.off('new-log', _onNewLog);
-    widget.socket.off('metrics-update', _onMetricsUpdate);
+    _toggleMetricsListeners(false);
     super.dispose();
   }
 
+  void _toggleMetricsListeners(bool enable) {
+    if (enable) {
+      widget.socket.on('metrics-update', _onMetricsUpdate);
+      print("Metrics listener enabled.");
+    } else {
+      widget.socket.off('metrics-update', _onMetricsUpdate);
+      print("Metrics listener temporarily disabled.");
+    }
+  }
+
 // 2. "롤백" 버튼 클릭 시 이 함수 호출
-  void _showRollbackDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return RollbackDialog(
-          currentAppName: "Frontend App", // (실제 앱 이름 전달)
-          history: dummyHistory, // (실제 히스토리 리스트 전달)
-          onRollbackConfirmed: (selectedItem) {
-            // 롤백 실행 로직
-            print("${selectedItem.version}으로 롤백을 시작합니다.");
+  void _showRollbackModal(BuildContext context) {
+    // 현재 프레임에서 setState 충돌을 막기 위해 잠시 리스너를 끕니다.
+    _toggleMetricsListeners(false);
 
-            // 예: socket.emit('start-rollback', {'id': selectedItem.id});
+    // 2단계: 다음 프레임에서 모달 띄우기 (마우스 트래커 충돌 회피)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // showDialog는 Future를 반환하며, 모달이 닫힐 때 Future가 완료됩니다.
+      showDialog(
+        context: context,
+        barrierDismissible: true, // Esc 키 등으로 닫기 허용
+        builder: (BuildContext dialogContext) {
+          return RollbackDialog(
+            currentAppName: widget.plant.name,
+            history: _dummyHistory,
+            onRollbackConfirmed: (selectedItem) {
+              // 모달에서 '롤백 실행' 버튼이 눌렸을 때 실행됩니다.
 
-            // (선택) 롤백 시작을 알리는 스낵바 표시
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("${selectedItem.version}으로 롤백을 시작합니다...")),
-            );
-          },
-        );
-      },
-    );
+              // 1. 서버에 요청
+              widget.socket.emit('start-rollback', {
+                'plantId': widget.plant.id,
+                // ... (추가 데이터)
+              });
+
+              // 2. 알림 표시 (onRollbackConfirmed 내부에서는 context가 안전합니다)
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("${selectedItem.version}으로 롤백 시작...")),
+              );
+
+              // Note: 모달은 이 콜백 실행 후 자동으로 닫힙니다.
+            },
+          );
+        },
+      ).then((_) {
+        // 모달이 '취소', '롤백 실행', 혹은 외부 탭 등으로 닫히면 실행됩니다.
+        _toggleMetricsListeners(true);
+      });
+    });
   }
 
   // --- 소켓 리스너 ---
@@ -488,11 +512,10 @@ class _DeploymentPageState extends State<DeploymentPage> {
         children: [
           _buildCardHeader("배포 정보"),
           const SizedBox(height: 16),
-          _buildInfoRow("마지막 배포", "2시간 전"),
-          _buildInfoRow("배포 환경", "Production"),
+          _buildInfoRow("마지막 배포", DateFormat('yy-MM-dd HH:mm').format(plant.lastDeployedAt.toDate())),
+          _buildInfoRow("배포 환경", plant.plantType == 'pot' ? "Development" : "Production"), // 예시
           _buildInfoRow("인스턴스", "2개"),
           _buildInfoRow("리전", "Asia-Northeast1"),
-
           // (수정) 정보와 버튼 사이 간격 추가
           const SizedBox(height: 24),
 
@@ -513,10 +536,7 @@ class _DeploymentPageState extends State<DeploymentPage> {
 
               // 2. (신규) 롤백 버튼
               OutlinedButton.icon(
-                onPressed: () {
-                  // TODO: 이전에 만든 _showRollbackDialog(context) 함수 호출
-                  // 예: _showRollbackDialog(context);
-                },
+                onPressed: () => _showRollbackModal(context),
                 style: outlinedButtonStyle,
                 icon: const Icon(Icons.history, size: 20),
                 label: const Text("롤백", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -626,24 +646,11 @@ class _DeploymentPageState extends State<DeploymentPage> {
 
   // (3-2) 실시간 로그 카드
   Widget _buildLogs() {
-    final logMessages = [
-      "[2024-01-01 10:00:01] 팜 시작됨",
-      "[2024-01-01 10:00:02] 데이터베이스 연결 성공",
-      "[2024-01-01 10:00:10] 404 포트 3000에서 대기중",
-      "[2024-01-01 10:00:15] GET /api/users - 200 OK",
-      "[2024-01-01 10:00:32] POST /api/auth/login - 200 OK",
-      "[2024-01-01 10:01:05] GET /api/dashboard - 200 OK",
-      "[2024-01-01 10:01:23] WebSocket 연결 설정됨",
-      "[2024-01-01 10:02:01] 메모리 사용량: 62%",
-      "[2024-01-01 10:02:15] CPU 사용량: 45%",
-    ];
-
     return _buildBaseCard(
       child: Column(
         children: [
           _buildCardHeader("실시간 로그", action: Icon(Icons.download_outlined, color: _subTextColor)),
           const SizedBox(height: 16),
-          // (로그 컨테이너)
           Container(
             height: 310, // (메트릭 차트와 높이 맞춤)
             padding: const EdgeInsets.all(12),
@@ -653,14 +660,20 @@ class _DeploymentPageState extends State<DeploymentPage> {
             ),
             child: ListView.builder(
               controller: _logScrollController,
-              itemCount: logMessages.length,
+              itemCount: logs.length,
               itemBuilder: (context, index) {
-                final logText = logMessages[index];
+                final logEntry = logs[index];
+
+                Color logColor = _successColor;
+                if (logEntry.status == 'TRAFFIC_HIT') logColor = Colors.lightBlueAccent;
+                if (logEntry.status.contains('ERROR')) logColor = Colors.redAccent;
+
+                final time = DateFormat('HH:mm:ss').format(logEntry.time);
 
                 return Text(
-                  logText,
+                  "[$time] ${logEntry.message}",
                   style: TextStyle(
-                    color: _successColor,
+                    color: logColor,
                     fontFamily: 'monospace',
                     fontSize: 12,
                     height: 1.5,

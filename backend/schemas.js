@@ -23,7 +23,13 @@ const addSecretSchema = z.object({
     .min(1)
     .regex(/^[A-Z_][A-Z0-9_]*$/, "환경 변수 이름 형식이 아닙니다 (예: DATABASE_URL)."),
   value: z.string().min(1, "값은 필수입니다."),
-  description: z.string().optional(),
+  
+  // 프론트엔드에서 null을 보낼 수 있고, 값이 없어도 되도록 수정
+  description: z.string().nullable().optional(), 
+  
+  // .nullable() 은 null 값을 허용하고,
+  // .optional() 은 아예 필드가 존재하지 않아도 허용합니다.
+  // 프론트에서 명시적으로 null을 보내므로 .nullable()이 필수입니다.
 });
 
 // 4. 롤백 스키마 (RollbackDialog)

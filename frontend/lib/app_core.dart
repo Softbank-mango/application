@@ -19,7 +19,7 @@ import 'models/logEntry_model.dart';
 import 'pages/workspace_selection.dart';
 import 'pages/app_list.dart';
 import 'pages/deployment.dart';
-import 'pages/loading.dart';
+// import 'pages/loading.dart';
 import 'models/workspace.dart';
 import 'models/user_data.dart';
 import 'widgets/top_bar.dart';
@@ -29,6 +29,7 @@ import 'pages/deployment.dart';
 import 'app_state.dart';
 import 'widgets/new_deploy.dart';
 import '../widgets/new_workspace.dart';
+import 'widgets/deploy_modal.dart';
 
 
 class AppStateNavBuilder extends StatelessWidget {
@@ -193,7 +194,7 @@ class _AppCoreState extends State<AppCore> {
     // socket?.off('reaction-update', _onReactionUpdate);
     socket?.off('metrics-update', _onMetricsUpdate);
     socket?.off('workspaces-list', _onWorkspacesList);
-    // socket?.off('get-my-workspaces', _onGetMyWorkspaces);
+    socket?.off('workspaces-updated', _onWorkspacesUpdated);
 
     socket?.dispose();
     player.dispose();
@@ -224,7 +225,7 @@ class _AppCoreState extends State<AppCore> {
     // socket?.on('reaction-update', _onReactionUpdate); // (삭제)
     socket?.on('metrics-update', _onMetricsUpdate);
     socket?.on('workspaces-list', _onWorkspacesList);
-    // socket?.on('get-my-workspaces', _onGetMyWorkspaces);
+    socket?.on('workspaces-updated', _onWorkspacesUpdated);
   }
 
   // _onCurrentShelf 메소드 전체
@@ -269,24 +270,29 @@ class _AppCoreState extends State<AppCore> {
     );
 
     if (mounted) {
-      appState.navigateToDeployment(newPlant);
+      // 1. AppState에 새로 생성된 Plant를 저장 (DeploymentPage가 사용)
+      appState.selectedPlant.value = newPlant;
+
+      // 2. (★★★★★ 최종 수정 ★★★★★)
+      //    socketService 매개변수 호출을 완전히 삭제합니다.
+      showDialog(
+        context: context,
+        barrierDismissible: false, // 외부 클릭 방지
+        builder: (deployCtx) => DeployModal(
+          plant: newPlant, // Plant 객체만 전달
+          // socketService: socket!, // ◀ 이 매개변수를 완전히 제거합니다.
+        ),
+      );
     }
   }
 
-  void _onPlantUpdate(dynamic data) {
+  void _onWorkspacesUpdated(dynamic data) {
     if (!mounted) return;
-    // shelf 변수가 없으므로 이 로직은 이제 ShelfPage에서 처리되어야 함
-    /*
-    setState(() {
-      try {
-        final plant = shelf.firstWhere((p) => p.id == data['id']);
-        plant.status = data['status'];
-        plant.version = data['version'] ?? plant.version;
-        plant.plantType = data['plantType'] ?? plant.plantType;
-        if(plant.status == 'SLEEPING') plant.currentStatusMessage = '겨울잠 상태';
-      } catch (e) { print('Update for unknown plant: ${data['id']}'); }
-    });
-    */
+    print("Workspace list changed on server, re-fetching...");
+
+    // setState(true) 대신, 요청만 수행합니다.
+    // 로딩 인디케이터는 _workspaces.isEmpty를 통해 간접적으로 처리하는 것이 더 안전합니다.
+    socket?.emit('get-my-workspaces');
   }
 
   void _onNewLog(dynamic data) {
@@ -340,6 +346,8 @@ class _AppCoreState extends State<AppCore> {
     if (!mounted) return;
     setState(() {
       _workspaces = (data as List).map((ws) => Workspace.fromMap(ws)).toList();
+
+      // 데이터 수신 완료 후 로딩 상태를 false로 설정하여 UI를 갱신합니다.
       _isLoadingWorkspaces = false;
     });
   }
@@ -362,13 +370,13 @@ class _AppCoreState extends State<AppCore> {
 
     showDialog(
       context: context,
-      // (수정) NewDeploymentDialog 위젯 사용
-      builder: (ctx) => NewDeploymentDialog(
+      builder: (ctx) => NewDeploymentDialog( // Git URL 입력창 (New Deployment Dialog)
         onDeploymentStart: (appName, gitUrl, description) {
-          // NewDeploymentDialog에서 전달받은 데이터를 사용
+
           final newName = appName.isNotEmpty ? appName : 'New App';
           final newDesc = description != null && description.isNotEmpty ? description : 'New deployment...';
 
+          // 1. 서버에 배포 요청을 보냅니다.
           socket!.emit('start-deploy', {
             'gitUrl': gitUrl,
             'version': newName,
@@ -377,11 +385,9 @@ class _AppCoreState extends State<AppCore> {
             'workspaceId': workspaceId,
           });
 
-          // DeploymentLoadingPage로 이동하는 로직은 그대로 유지
-          Navigator.push(context, MaterialPageRoute(
-              builder: (context) => DeploymentLoadingPage(),
-              settings: RouteSettings(name: '/loading')
-          ));
+          // 2. (★★★★★ 핵심 ★★★★★)
+          //    이 위치에서는 DeployModal을 띄우지 않습니다.
+          //    서버가 응답(new-plant)을 보낼 때까지 기다립니다.
         },
       ),
     );
@@ -398,8 +404,7 @@ class _AppCoreState extends State<AppCore> {
       builder: (BuildContext dialogContext) {
         return NewWorkspaceDialog(
           onWorkspaceCreated: (name, description, type) {
-            // (콜백) 여기서 생성 로직 실행
-            print("새 워크스페이스 생성됨: $name ($type)");
+            // 1. 워크스페이스 생성 요청 (서버로 emit)
             _createNewWorkspace(name, description, type);
           },
         );
